@@ -1,75 +1,129 @@
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel, Field
+from typing import Literal
 
-# ----------------- EQUIPES -----------------
-class EquipeBase(BaseModel):
-    nome: str = Field(..., example="CyberPantanal")
-    curso_turma: str = Field(..., example="Técnico em Informática 3º Ano")
-    cor_hex: str = Field("#3B82F6", example="#3B82F6")
-    lider: Optional[str] = Field(None, example="Lucas Silva")
+from pydantic import BaseModel, ConfigDict, Field
 
-class EquipeCreate(EquipeBase):
-    pass
 
-class EquipeResponse(EquipeBase):
+UserRole = Literal["participant", "table_master", "admin"]
+
+
+class ParticipantRegister(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+
+
+class AuthenticatedUser(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
-    total_pontos: int
-    criado_em: datetime
+    username: str
+    role: UserRole
+    participant_code: str | None = Field(default=None, min_length=6, max_length=6)
+    is_active: bool
 
-    class Config:
-        from_attributes = True
+
+class PersonalScore(BaseModel):
+    game_name: str
+    points: int = Field(ge=1, le=100)
 
 
-# ----------------- PROVAS -----------------
-class ProvaBase(BaseModel):
-    titulo: str = Field(..., example="Quiz de Hardware & Redes")
-    descricao: Optional[str] = Field(None, example="Perguntas rápidas sobre arquitetura")
-    pontos_padrao: int = Field(50, example=50)
-    ativa: bool = True
+class AdminGameCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-class ProvaCreate(ProvaBase):
-    pass
+    name: str = Field(min_length=1, max_length=200)
 
-class ProvaResponse(ProvaBase):
+
+class AdminMasterCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class MasterAssignment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    master_id: int = Field(gt=0)
+
+
+class AdminMasterSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
-    criado_em: datetime
+    username: str
+    role: Literal["table_master"]
+    is_active: bool
 
-    class Config:
-        from_attributes = True
 
-
-# ----------------- PONTUAÇÕES -----------------
-class PontuacaoCreate(BaseModel):
-    equipe_id: int = Field(..., example=1)
-    prova_id: int = Field(..., example=2)
-    pontos: int = Field(..., example=50)
-    justificativa: Optional[str] = Field(None, example="Primeiro lugar no percurso do robô")
-    jurado_id: Optional[int] = Field(None, example=1)
-
-class PontuacaoResponse(BaseModel):
+class AdminMasterListItem(BaseModel):
     id: int
-    equipe_id: int
-    prova_id: int
-    pontos: int
-    justificativa: Optional[str]
-    criado_em: datetime
-
-    class Config:
-        from_attributes = True
+    username: str
+    is_active: bool
+    game_id: int | None
+    game_name: str | None
 
 
-# ----------------- RANKING (TELÃO) -----------------
-class RankingItemResponse(BaseModel):
-    posicao: int
+class AdminGameResponse(BaseModel):
     id: int
-    nome: str
-    curso_turma: str
-    cor_hex: str
-    total_pontos: int
-    ultima_atualizacao: Optional[datetime] = None
+    name: str
+    is_active: bool
+    master: AdminMasterSummary | None = None
+
+
+class GameMasterGameResponse(BaseModel):
+    id: int
+    name: str
+    is_active: bool
+
+
+class ScoreSubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    participant_code: str = Field(min_length=6, max_length=6)
+    points: int = Field(strict=True, ge=1, le=100)
+
+
+class GameMasterScoreResponse(BaseModel):
+    participant_code: str
+    points: int = Field(ge=1, le=100)
+    created_at: datetime
+
+
+class ScoreCorrection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    points: int = Field(strict=True, ge=1, le=100)
+
+
+class ScoreCorrectionResponse(BaseModel):
+    id: int
+    points: int = Field(ge=1, le=100)
+
+
+class RankingEntry(BaseModel):
+    position: int = Field(ge=1)
+    participant_code: str
+    total_points: int = Field(ge=0)
+
 
 class RankingResponse(BaseModel):
-    total_equipes: int
-    atualizado_em: datetime
-    ranking: List[RankingItemResponse]
+    total_participants: int = Field(ge=0)
+    ranking: list[RankingEntry]
+
+
+class DisplayRankingResponse(BaseModel):
+    ranking: list[RankingEntry]
