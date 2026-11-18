@@ -1,27 +1,39 @@
 <template>
   <div class="app-layout">
-    <Navbar 
-      :currentView="currentView" 
-      :isConnected="isWsConnected"
-      @change-view="currentView = $event"
+    <Navbar
+      :currentView="currentView"
+      :isConnected="isServerOnline"
+      @change-view="navegarPara"
     />
 
     <main class="main-content">
-      <!-- Visão 1: Telão Oficial do Ranking -->
-      <TelaoRanking 
-        v-if="currentView === 'telao'"
-        :ranking="ranking"
-        :lastScoreToast="lastScoreToast"
+      <!-- Interface 1: Recepção / Cadastro Manual de Participantes (/#cadastro) -->
+      <CadastroParticipantes
+        v-if="currentView === 'cadastro'"
+        :participantes="participantesConhecidos"
+        :isServerOnline="isServerOnline"
+        @participante-cadastrado="registrarParticipanteEmMemoria"
+        @retry-connection="sincronizarComServidor"
       />
 
-      <!-- Visão 2: Painel do Jurado / Lançamento de Notas -->
-      <PainelJurado 
-        v-if="currentView === 'jurado'"
-        :equipes="equipes"
-        :provas="provas"
-        :apiBaseUrl="apiBaseUrl"
-        @pontuacao-enviada="handlePontuacaoLocal"
-        @dados-atualizados="carregarDadosIniciais"
+      <!-- Interface 2: Painel do Chefe de Mesa (/#mesa) -->
+      <PainelChefeMesa
+        v-else-if="currentView === 'mesa'"
+        :participantesConhecidos="participantesConhecidos"
+        :rankingAtual="ranking"
+        :isServerOnline="isServerOnline"
+        @pontuacao-registrada="aoRegistrarPontuacaoNaMesa"
+        @retry-connection="sincronizarComServidor"
+      />
+
+      <!-- Interface 3: Ranking Geral Top 10 para TV (/#ranking) -->
+      <TelaoRanking
+        v-else
+        :ranking="ranking"
+        :participantesConhecidos="participantesConhecidos"
+        :lastScoreToast="lastScoreToast"
+        :isServerOnline="isServerOnline"
+        :ultimaAtualizacao="ultimaAtualizacaoRanking"
       />
     </main>
   </div>
@@ -30,145 +42,141 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import Navbar from './components/Navbar.vue'
+import CadastroParticipantes from './components/CadastroParticipantes.vue'
+import PainelChefeMesa from './components/PainelChefeMesa.vue'
 import TelaoRanking from './components/TelaoRanking.vue'
-import PainelJurado from './components/PainelJurado.vue'
+import { getDisplayRanking } from './services/api.js'
 
-// Detecta automaticamente o host (seja localhost ou IP na rede local)
-const host = window.location.hostname || 'localhost'
-const apiBaseUrl = `http://${host}:8000`
-const wsUrl = `ws://${host}:8000/ws/ranking`
+const ROTAS_VALIDAS = new Set(['cadastro', 'mesa', 'ranking'])
 
-const currentView = ref('telao')
-const isWsConnected = ref(false)
+function resolverRotaPorHash() {
+  const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase()
+  if (ROTAS_VALIDAS.has(rawHash)) {
+    return rawHash
+  }
+  return 'ranking'
+}
+
+const currentView = ref(resolverRotaPorHash())
+const isServerOnline = ref(false)
 const ranking = ref([])
-const equipes = ref([])
-const provas = ref([])
+const participantesConhecidos = ref([])
 const lastScoreToast = ref(null)
+const ultimaAtualizacaoRanking = ref('')
 
-let socket = null
-let reconnectInterval = null
+let pollingInterval = null
+const POLLING_INTERVAL_MS = 2000
+let requisicaoEmAndamento = false
+let mapaPontosAnteriores = new Map()
+let primeiraCargaConcluida = false
 
-// DADOS DIDÁTICOS DE CONTINGÊNCIA (Caso o backend ainda não esteja rodando no 1º dia de aula)
-const fallbackRanking = [
-  { id: 1, posicao: 1, nome: "CyberPantanal", curso_turma: "Técnico em Informática 3º Ano", cor_hex: "#3B82F6", total_pontos: 320 },
-  { id: 2, posicao: 2, nome: "Binários do Cerrado", curso_turma: "Técnico em Informática 2º Ano", cor_hex: "#10B981", total_pontos: 290 },
-  { id: 3, posicao: 3, nome: "Algoritmos da Chapada", curso_turma: "Engenharia / Sistemas", cor_hex: "#F59E0B", total_pontos: 250 },
-  { id: 4, posicao: 4, nome: "ByteMat Tech", curso_turma: "Técnico em Redes 1º Ano", cor_hex: "#8B5CF6", total_pontos: 210 },
-  { id: 5, posicao: 5, nome: "Hackers do Vale", curso_turma: "Análise e Des. Sistemas", cor_hex: "#EC4899", total_pontos: 180 },
-  { id: 6, posicao: 6, nome: "NullPointer Masters", curso_turma: "Técnico em Informática 1º Ano", cor_hex: "#6366F1", total_pontos: 150 }
-]
-
-const fallbackProvas = [
-  { id: 1, titulo: "Quiz de Hardware & Arquitetura", pontos_padrao: 50 },
-  { id: 2, titulo: "Desafio de Robótica & Sensores", pontos_padrao: 100 },
-  { id: 3, titulo: "Caça ao Bug (Debugging Relâmpago)", pontos_padrao: 80 },
-  { id: 4, titulo: "Arrecadação de Lixo Eletrônico", pontos_padrao: 150 },
-  { id: 5, titulo: "Torta na Cara Tech", pontos_padrao: 60 }
-]
-
-// Carrega os dados iniciais do banco via REST API
-async function carregarDadosIniciais() {
-  try {
-    const resRank = await fetch(`${apiBaseUrl}/api/ranking`)
-    if (resRank.ok) {
-      const data = await resRank.json()
-      ranking.value = data.ranking
-    } else {
-      ranking.value = fallbackRanking
-    }
-
-    const resEq = await fetch(`${apiBaseUrl}/api/equipes`)
-    if (resEq.ok) {
-      equipes.value = await resEq.json()
-    } else {
-      equipes.value = fallbackRanking
-    }
-
-    const resPr = await fetch(`${apiBaseUrl}/api/provas`)
-    if (resPr.ok) {
-      provas.value = await resPr.json()
-    } else {
-      provas.value = fallbackProvas
-    }
-  } catch (error) {
-    console.warn("Backend ainda não conectado. Utilizando dados didáticos de exemplo.", error)
-    ranking.value = fallbackRanking
-    equipes.value = fallbackRanking
-    provas.value = fallbackProvas
+function navegarPara(view) {
+  const destino = ROTAS_VALIDAS.has(view) ? view : 'ranking'
+  currentView.value = destino
+  if (window.location.hash !== `#${destino}`) {
+    window.location.hash = `#${destino}`
   }
 }
 
-// Conexão WebSocket em Tempo Real com Reconexão Automática
-function conectarWebSocket() {
-  try {
-    socket = new WebSocket(wsUrl)
-
-    socket.onopen = () => {
-      console.log("⚡ [WebSocket] Conectado ao servidor de tempo real da Jenpex!")
-      isWsConnected.value = true
-    }
-
-    socket.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data)
-        console.log("📡 [WebSocket] Evento recebido:", payload)
-
-        if (payload.ranking && payload.ranking.ranking) {
-          ranking.value = payload.ranking.ranking
-        }
-
-        if (payload.evento === 'PONTOS_ATUALIZADOS') {
-          lastScoreToast.value = {
-            equipe: payload.equipe_nome,
-            pontos: payload.pontos_adicionados,
-            prova: payload.prova_titulo
-          }
-          // Fecha o toast após 4.5 segundos
-          setTimeout(() => {
-            lastScoreToast.value = null
-          }, 4500)
-        }
-      } catch (err) {
-        console.error("Erro ao processar mensagem do WebSocket:", err)
-      }
-    }
-
-    socket.onclose = () => {
-      console.warn("🔌 [WebSocket] Conexão encerrada. Tentando reconectar em 3s...")
-      isWsConnected.value = false
-    }
-
-    socket.onerror = (err) => {
-      console.warn("⚠️ [WebSocket] Erro na conexão:", err)
-      isWsConnected.value = false
-    }
-  } catch (e) {
-    isWsConnected.value = false
-  }
+function aoMudarHash() {
+  currentView.value = resolverRotaPorHash()
 }
 
-function handlePontuacaoLocal(dados) {
-  lastScoreToast.value = dados
+function exibirToastPontuacao(dadosToast) {
+  lastScoreToast.value = dadosToast
   setTimeout(() => {
     lastScoreToast.value = null
   }, 4500)
 }
 
-onMounted(() => {
-  carregarDadosIniciais()
-  conectarWebSocket()
+function registrarParticipanteEmMemoria(novoParticipante) {
+  const existe = participantesConhecidos.value.some(
+    (p) => p.participant_code === novoParticipante.participant_code
+  )
+  if (!existe) {
+    participantesConhecidos.value = [novoParticipante, ...participantesConhecidos.value]
+  }
+}
 
-  // Loop de reconexão preventiva caso o servidor reinicie
-  reconnectInterval = setInterval(() => {
-    if (!isWsConnected.value) {
-      conectarWebSocket()
+function aoRegistrarPontuacaoNaMesa(evento) {
+  exibirToastPontuacao({
+    participante: evento.participant_name || `Participante #${evento.participant_code}`,
+    pontos: evento.points,
+    jogo: evento.game_name
+  })
+  sincronizarComServidor()
+}
+
+// Consulta periódica ao servidor central a cada 2 segundos (sem substituir por dados simulados em caso de erro)
+async function sincronizarComServidor() {
+  if (requisicaoEmAndamento) return
+  requisicaoEmAndamento = true
+
+  try {
+    const data = await getDisplayRanking()
+    isServerOnline.value = true
+    ultimaAtualizacaoRanking.value = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+
+    if (data && Array.isArray(data.ranking)) {
+      const novaLista = data.ranking
+
+      // Detecta aumento de pontuação no ranking para acionar efeito visual no Telão
+      if (primeiraCargaConcluida) {
+        for (const item of novaLista) {
+          const code = item.participant_code
+          const pontosAntigos = mapaPontosAnteriores.get(code)
+          if (pontosAntigos !== undefined && item.total_points > pontosAntigos) {
+            const diferenca = item.total_points - pontosAntigos
+            const conhecido = participantesConhecidos.value.find((p) => p.participant_code === code)
+            exibirToastPontuacao({
+              participante: item.username || conhecido?.nomeExibicao || `Participante #${code}`,
+              pontos: diferenca,
+              jogo: 'Pontuação atualizada'
+            })
+            break
+          }
+        }
+      }
+
+      const novoMapa = new Map()
+      for (const item of novaLista) {
+        if (item.participant_code) {
+          novoMapa.set(item.participant_code, item.total_points)
+        }
+      }
+      mapaPontosAnteriores = novoMapa
+      primeiraCargaConcluida = true
+
+      // Preserva exatamente os dados reais enviados pelo servidor (até 10 posições no componente TelaoRanking)
+      ranking.value = novaLista
     }
-  }, 4000)
+  } catch {
+    // Em caso de falha, sinaliza indisponibilidade e preserva os dados já existentes em tela
+    isServerOnline.value = false
+  } finally {
+    requisicaoEmAndamento = false
+  }
+}
+
+onMounted(() => {
+  if (!window.location.hash) {
+    window.location.hash = `#${currentView.value}`
+  }
+  window.addEventListener('hashchange', aoMudarHash)
+
+  sincronizarComServidor()
+  pollingInterval = setInterval(() => {
+    sincronizarComServidor()
+  }, POLLING_INTERVAL_MS)
 })
 
 onUnmounted(() => {
-  if (socket) socket.close()
-  if (reconnectInterval) clearInterval(reconnectInterval)
+  window.removeEventListener('hashchange', aoMudarHash)
+  if (pollingInterval) clearInterval(pollingInterval)
 })
 </script>
 
