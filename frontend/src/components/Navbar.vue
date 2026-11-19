@@ -40,13 +40,20 @@
         >
           🖥️ Ranking Top 10 (#ranking)
         </a>
+        <a
+          href="#notas"
+          :class="['nav-btn', currentView === 'notas' ? 'active' : '']"
+          @click.prevent="$emit('change-view', 'notas')"
+        >
+          🎓 Minhas Notas (#notas)
+        </a>
       </nav>
 
       <!-- Indicador de Conexão com o Servidor Central na Rede Local -->
       <div class="nav-actions">
         <div :class="['badge-live', isConnected ? 'online' : 'offline']">
           <span :class="['pulse-dot', isConnected ? 'green' : 'red']"></span>
-          <span>{{ isConnected ? 'Servidor LAN Conectado' : 'Servidor Indisponível' }}</span>
+          <span>{{ isConnected ? 'Servidor Conectado' : 'Servidor Indisponível' }}</span>
         </div>
 
         <button

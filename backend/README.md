@@ -77,13 +77,19 @@ drop tables automatically.
 
 ## Main endpoints and permissions
 
+All routes are served under the `/api` prefix.
+
 | Endpoint | Access |
 | --- | --- |
-| `POST /auth/register`, `POST /auth/login` | Public |
-| `GET /me`, `GET /me/scores` | Authenticated user; scores are participant-only |
-| `/admin/...`, including `GET /admin/ranking` | Administrator |
-| `/game-master/...` | Authenticated table master |
-| `GET /display/ranking` | Public, read-only |
+| `POST /api/auth/login` | Public (username, or participant code for students); rate limited |
+| `POST /api/auth/register` | Administrator only; generates a 6-digit PIN when no password is sent |
+| `GET /api/me`, `GET /api/me/scores` | Authenticated user; scores are participant-only |
+| `/api/admin/...`, including `GET /api/admin/ranking` | Administrator |
+| `/api/game-master/...` | Authenticated table master |
+| `GET /api/display/ranking` | Public, read-only |
+
+Tables and the administrator (`ADMIN_USERNAME` / `ADMIN_PASSWORD`) are created
+automatically at startup. See `docs/DEPLOY.md` for cloud deployment.
 
 The public display endpoint returns the current top five ranking entries, including
 shared positions, participant codes, and total points. It does not expose

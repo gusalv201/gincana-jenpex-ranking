@@ -68,6 +68,7 @@ function formatErrorMessage(status, detail) {
       'Admin role required': 'Autenticação de administrador necessária para esta operação.',
       'Could not validate credentials': 'Sessão inválida ou expirada (HTTP 401). Faça login novamente.',
       'Not authenticated': 'Não autenticado (HTTP 401). Informe as credenciais do chefe de mesa.',
+      'Too many failed login attempts; try again later': 'Muitas tentativas de login com erro. Aguarde 10 minutos e tente novamente.',
       'Unable to allocate a unique participant code; try again': 'Não foi possível gerar um código único no momento (HTTP 503). Tente novamente.',
     }
     return translations[detail] || detail
