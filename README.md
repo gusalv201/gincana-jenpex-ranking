@@ -45,6 +45,12 @@ Gincana_tecnologica/
 
 ---
 
+## ☁️ Deploy na Nuvem
+
+O sistema está preparado para rodar gratuitamente no **Render** (app) + **Aiven** (MySQL). Passo a passo em [docs/DEPLOY.md](docs/DEPLOY.md).
+
+---
+
 ## 🚀 Como Executar o Projeto Localmente (Ambiente dos Alunos)
 
 ### 1. Pré-requisitos
