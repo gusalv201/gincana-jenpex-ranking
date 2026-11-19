@@ -1,0 +1,22 @@
+# Blueprint do Render: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: jenpex-gincana
+    runtime: docker
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /api/
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # preenchido no painel do Render (conexão do Aiven)
+      - key: DATABASE_SSL
+        value: "on"
+      - key: DATABASE_CA_CERT
+        sync: false   # conteúdo do ca.pem do Aiven
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

@@ -31,6 +31,10 @@ class _ExecResult:
         return self.value
 
 
+class _FakeRequest:
+    client = None
+
+
 class _LoginSession:
     def __init__(self, user):
         self.user = user
@@ -97,6 +101,7 @@ class FinalizationTests(unittest.TestCase):
                     login(
                         LoginRequest(username=username, password="wrong-password"),
                         _LoginSession(stored_user),
+                        _FakeRequest(),
                     )
                 )
             except HTTPException as error:
@@ -121,6 +126,7 @@ class FinalizationTests(unittest.TestCase):
             login(
                 LoginRequest(username="known", password="correct-password"),
                 _LoginSession(user),
+                _FakeRequest(),
             )
         )
         self.assertEqual(decode_access_token(response.access_token), 42)
@@ -148,10 +154,12 @@ class FinalizationTests(unittest.TestCase):
             [require_table_master],
         )
         self.assertTrue(me_router.dependencies)
-        self.assertIn(
-            "/display/ranking",
-            __import__("main").app.openapi()["paths"],
-        )
+        paths = __import__("main").app.openapi()["paths"]
+        self.assertIn("/api/display/ranking", paths)
+        self.assertNotIn("security", paths["/api/display/ranking"]["get"])
+        # Cadastro de participantes é restrito ao admin
+        self.assertIn("security", paths["/api/auth/register"]["post"])
+        self.assertNotIn("security", paths["/api/auth/login"]["post"])
 
     def test_public_ranking_contains_only_top_five_safe_entries(self):
         engine = create_engine("sqlite://")
