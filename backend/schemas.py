@@ -11,8 +11,7 @@ class ParticipantRegister(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     username: str = Field(min_length=1, max_length=100)
-    # Opcional: se omitida, o servidor gera um PIN de 6 dígitos.
-    password: str | None = Field(default=None, min_length=6, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -35,11 +34,6 @@ class AuthenticatedUser(BaseModel):
     role: UserRole
     participant_code: str | None = Field(default=None, min_length=6, max_length=6)
     is_active: bool
-
-
-class ParticipantRegistered(AuthenticatedUser):
-    # PIN gerado pelo servidor (somente quando a senha não foi informada).
-    password: str | None = None
 
 
 class PersonalScore(BaseModel):

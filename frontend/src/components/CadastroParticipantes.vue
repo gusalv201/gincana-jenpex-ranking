@@ -25,31 +25,7 @@
       </div>
     </header>
 
-    <!-- Login obrigatório do administrador (recepção) -->
-    <section v-if="!adminLogado" class="form-panel glass-panel admin-login-panel">
-      <h3 class="panel-title">🔒 Acesso da Recepção</h3>
-      <p class="field-hint">Somente o administrador pode cadastrar participantes.</p>
-      <form @submit.prevent="entrarComoAdmin">
-        <div class="form-group">
-          <label for="admin-user">Usuário administrador</label>
-          <input id="admin-user" v-model="credenciaisAdmin.username" type="text" class="input-field"
-            autocomplete="username" required :disabled="autenticando" />
-        </div>
-        <div class="form-group">
-          <label for="admin-pass">Senha</label>
-          <input id="admin-pass" v-model="credenciaisAdmin.password" type="password" class="input-field"
-            autocomplete="current-password" required :disabled="autenticando" />
-        </div>
-        <div v-if="erroLogin" class="banner-alert banner-error" role="alert">
-          <div><p>{{ erroLogin }}</p></div>
-        </div>
-        <button type="submit" class="btn-primary btn-submit-cadastro" :disabled="autenticando">
-          {{ autenticando ? '⏳ Validando...' : 'Entrar' }}
-        </button>
-      </form>
-    </section>
-
-    <div v-else class="cadastro-grid">
+    <div class="cadastro-grid">
       <!-- Coluna 1: Formulário de Cadastro -->
       <section class="form-panel glass-panel">
         <h3 class="panel-title">Novo Cadastro de Aluno</h3>
@@ -94,27 +70,6 @@
             </small>
           </div>
 
-          <div class="form-group">
-            <label for="input-pin">
-              Senha / PIN do aluno
-              <span class="label-optional">(opcional — em branco gera um PIN de 6 dígitos)</span>
-            </label>
-            <input
-              id="input-pin"
-              v-model="form.senha"
-              type="text"
-              class="input-field"
-              placeholder="Mínimo 6 caracteres"
-              maxlength="128"
-              :disabled="enviando"
-              autocomplete="off"
-              @input="limparAvisosValidacao"
-            />
-            <small class="field-hint">
-              O aluno usa o código + esta senha na aba "Minhas Notas" para ver a própria pontuação.
-            </small>
-          </div>
-
           <!-- Mensagem de Erro / Validação -->
           <div v-if="erroMensagem" class="banner-alert banner-error" role="alert">
             <div>
@@ -150,10 +105,6 @@
             <div v-if="ultimoCadastrado.participant_code" class="confirmacao-codigo">
               <span class="codigo-label">CÓDIGO GERADO</span>
               <span class="codigo-valor">{{ ultimoCadastrado.participant_code }}</span>
-            </div>
-            <div v-if="ultimoCadastrado.senha" class="confirmacao-codigo">
-              <span class="codigo-label">SENHA / PIN</span>
-              <span class="codigo-valor">{{ ultimoCadastrado.senha }}</span>
             </div>
           </div>
         </div>
@@ -228,7 +179,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { registerParticipant, login, getMyProfile, clearAuthToken } from '../services/api.js'
+import { registerParticipant } from '../services/api.js'
 
 const props = defineProps({
   participantes: {
@@ -249,38 +200,8 @@ const emit = defineEmits(['participante-cadastrado', 'retry-connection'])
 
 const form = ref({
   nome: '',
-  identificador: '',
-  senha: ''
+  identificador: ''
 })
-
-const adminLogado = ref(false)
-const autenticando = ref(false)
-const erroLogin = ref('')
-const credenciaisAdmin = ref({ username: '', password: '' })
-
-async function entrarComoAdmin() {
-  if (autenticando.value) return
-  erroLogin.value = ''
-  autenticando.value = true
-  try {
-    await login({
-      username: credenciaisAdmin.value.username.trim(),
-      password: credenciaisAdmin.value.password
-    })
-    const perfil = await getMyProfile()
-    if (perfil?.role !== 'admin') {
-      clearAuthToken()
-      erroLogin.value = 'Este usuário não é administrador.'
-      return
-    }
-    credenciaisAdmin.value.password = ''
-    adminLogado.value = true
-  } catch (error) {
-    erroLogin.value = error.message || 'Falha na autenticação.'
-  } finally {
-    autenticando.value = false
-  }
-}
 
 const termoPesquisa = ref('')
 const enviando = ref(false)
@@ -377,14 +298,8 @@ async function confirmarCadastro() {
   enviando.value = true
   try {
     // 3. Chamada real ao servidor central (sem senha compartilhada e sem simulação)
-    const senhaInformada = form.value.senha.trim()
-    if (senhaInformada && senhaInformada.length < 6) {
-      erroMensagem.value = 'A senha do aluno deve ter pelo menos 6 caracteres (ou deixe em branco para gerar um PIN).'
-      return
-    }
     const resposta = await registerParticipant({
-      username: usernameParaServidor,
-      password: senhaInformada
+      username: usernameParaServidor
     })
 
     // Só confirma se o servidor respondeu com sucesso
@@ -395,7 +310,6 @@ async function confirmarCadastro() {
       identificador: identLimpo || null,
       nomeExibicao: usernameParaServidor,
       participant_code: resposta.participant_code,
-      senha: resposta.password || senhaInformada,
       is_active: resposta.is_active ?? true,
       created_at: new Date().toISOString()
     }
@@ -407,7 +321,6 @@ async function confirmarCadastro() {
     // Limpa os campos após confirmação do servidor
     form.value.nome = ''
     form.value.identificador = ''
-    form.value.senha = ''
     nomeInputRef.value?.focus()
   } catch (error) {
     if (error.status === 409) {
@@ -417,10 +330,6 @@ async function confirmarCadastro() {
       identificadorInputRef.value?.focus()
     } else if (error.status === 422) {
       erroMensagem.value = error.message
-    } else if (error.status === 401 || error.status === 403) {
-      clearAuthToken()
-      adminLogado.value = false
-      erroLogin.value = 'Sessão expirada. Entre novamente como administrador.'
     } else {
       erroMensagem.value = error.message || 'Falha ao comunicar com o servidor central.'
     }
@@ -431,11 +340,6 @@ async function confirmarCadastro() {
 </script>
 
 <style scoped>
-.admin-login-panel {
-  max-width: 480px;
-  margin: 24px auto;
-}
-
 .cadastro-container {
   max-width: 1240px;
   margin: 0 auto;

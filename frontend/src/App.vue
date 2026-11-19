@@ -26,9 +26,6 @@
         @retry-connection="sincronizarComServidor"
       />
 
-      <!-- Interface 4: Área do aluno (/#notas) -->
-      <MinhasNotas v-else-if="currentView === 'notas'" />
-
       <!-- Interface 3: Ranking Geral Top 10 para TV (/#ranking) -->
       <TelaoRanking
         v-else
@@ -48,10 +45,9 @@ import Navbar from './components/Navbar.vue'
 import CadastroParticipantes from './components/CadastroParticipantes.vue'
 import PainelChefeMesa from './components/PainelChefeMesa.vue'
 import TelaoRanking from './components/TelaoRanking.vue'
-import MinhasNotas from './components/MinhasNotas.vue'
 import { getDisplayRanking } from './services/api.js'
 
-const ROTAS_VALIDAS = new Set(['cadastro', 'mesa', 'ranking', 'notas'])
+const ROTAS_VALIDAS = new Set(['cadastro', 'mesa', 'ranking'])
 
 function resolverRotaPorHash() {
   const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase()
