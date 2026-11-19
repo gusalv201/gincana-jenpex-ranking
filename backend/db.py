@@ -1,4 +1,5 @@
 import os
+import ssl
 from collections.abc import AsyncIterator
 
 from sqlalchemy import text
@@ -18,10 +19,26 @@ if database_url.drivername != "mysql+asyncmy":
         "DATABASE_URL deve usar o driver assíncrono MySQL: mysql+asyncmy://."
     )
 
+def _build_connect_args() -> dict:
+    """Ativa TLS para bancos na nuvem (Aiven, TiDB etc.).
+
+    DATABASE_SSL: "off" (padrão, uso local) ou "on".
+    DATABASE_CA_CERT: conteúdo PEM do certificado CA do provedor (opcional;
+    sem ele usa os CAs do sistema).
+    """
+    if os.getenv("DATABASE_SSL", "off").strip().lower() not in {"on", "true", "1"}:
+        return {}
+    ca_pem = os.getenv("DATABASE_CA_CERT", "").strip()
+    context = ssl.create_default_context(cadata=ca_pem or None)
+    return {"ssl": context}
+
+
 async_engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
+    pool_recycle=280,
+    connect_args=_build_connect_args(),
 )
 async_session = async_sessionmaker(
     bind=async_engine,
