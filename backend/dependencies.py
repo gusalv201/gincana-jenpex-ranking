@@ -52,6 +52,16 @@ async def require_admin(current_user: CurrentUserDep) -> User:
     return current_user
 
 
+async def require_staff(current_user: CurrentUserDep) -> User:
+    """Admin ou equipe da recepção (cadastro e consulta de alunos)."""
+    if current_user.role not in {"admin", "reception"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return current_user
+
+
 async def require_table_master(
     current_user: CurrentUserDep,
 ) -> User:

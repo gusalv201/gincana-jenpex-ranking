@@ -13,12 +13,15 @@ from schemas import (
     AdminMasterListItem,
     AdminMasterSummary,
     AdminParticipantListItem,
+    StaffCreate,
+    StaffSummary,
     MasterAssignment,
     RankingResponse,
     ScoreCorrection,
     ScoreCorrectionResponse,
 )
 from security import hash_password
+from services.participants import list_participants as list_participants_service
 from services.ranking import get_general_ranking
 from services.scoring import update_score
 
@@ -251,31 +254,7 @@ async def read_general_ranking(
 
 @router.get("/participants", response_model=list[AdminParticipantListItem])
 async def list_participants(session: SessionDep) -> list[AdminParticipantListItem]:
-    result = await session.exec(
-        select(
-            User.id,
-            User.username,
-            User.participant_code,
-            User.is_active,
-            func.coalesce(func.sum(Score.points), 0),
-            func.count(Score.id),
-        )
-        .outerjoin(Score, Score.participant_id == User.id)
-        .where(User.role == "participant")
-        .group_by(User.id, User.username, User.participant_code, User.is_active)
-        .order_by(User.username.asc())
-    )
-    return [
-        AdminParticipantListItem(
-            id=participant_id,
-            username=username,
-            participant_code=participant_code,
-            is_active=is_active,
-            total_points=int(total),
-            games_played=int(games),
-        )
-        for participant_id, username, participant_code, is_active, total, games in result.all()
-    ]
+    return await list_participants_service(session)
 
 
 @router.delete(
@@ -292,5 +271,46 @@ async def delete_participant(participant_id: int, session: SessionDep) -> Respon
         )
     await session.exec(delete(Score).where(Score.participant_id == participant_id))
     await session.delete(participant)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Equipe da recepção (perfil "reception"): cadastra, consulta e corrige alunos
+# ---------------------------------------------------------------------------
+@router.get("/staff", response_model=list[StaffSummary])
+async def list_staff(session: SessionDep) -> list[StaffSummary]:
+    result = await session.exec(
+        select(User).where(User.role == "reception").order_by(User.username.asc())
+    )
+    return [StaffSummary.model_validate(user) for user in result.all()]
+
+
+@router.post("/staff", response_model=StaffSummary, status_code=status.HTTP_201_CREATED)
+async def create_staff(staff_data: StaffCreate, session: SessionDep) -> StaffSummary:
+    username = staff_data.username.strip()
+    existing = await session.exec(select(User.id).where(User.username == username))
+    if existing.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already registered",
+        )
+    user = User(
+        username=username,
+        password_hash=hash_password(staff_data.password),
+        role="reception",
+        participant_code=None,
+    )
+    session.add(user)
+    await session.commit()
+    return StaffSummary.model_validate(user)
+
+
+@router.delete("/staff/{staff_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_staff(staff_id: int, session: SessionDep) -> Response:
+    user = await session.get(User, staff_id)
+    if user is None or user.role != "reception":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff not found")
+    await session.delete(user)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

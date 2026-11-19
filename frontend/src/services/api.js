@@ -64,6 +64,9 @@ function formatErrorMessage(status, detail) {
       'A game with scores cannot be reassigned': 'Um jogo que já possui pontuações não pode ter o chefe de mesa alterado (HTTP 409).',
       'Cannot assign a master to an inactive game': 'Não é possível vincular um chefe a um jogo inativo.',
       'User is not a table master': 'O usuário escolhido não é um chefe de mesa.',
+      'Staff not found': 'Usuário da recepção não encontrado.',
+      'Name cannot be empty': 'O nome não pode ficar vazio.',
+      'Insufficient permissions': 'Seu usuário não tem permissão para esta ação.',
       'Score not found': 'Registro de pontuação não encontrado (HTTP 404).',
       'Participant role required': 'Acesso restrito a participantes (HTTP 403).',
       'Table master role required': 'Autenticação de chefe de mesa necessária para esta operação.',
@@ -408,4 +411,68 @@ export function deleteAdminParticipant(participantId, options = {}) {
     ...options,
     method: 'DELETE',
   })
+}
+
+// ---------------------------------------------------------------------------
+// Sessão compartilhada entre as telas da mesma aba
+// ---------------------------------------------------------------------------
+
+/**
+ * Se já houver alguém logado nesta aba com um dos perfis aceitos, devolve o
+ * perfil (evita pedir login de novo ao trocar de tela). Caso contrário, null.
+ */
+export async function retomarSessao(perfisAceitos) {
+  if (!getAuthToken()) return null
+  try {
+    const perfil = await getMyProfile()
+    return perfisAceitos.includes(perfil?.role) ? perfil : null
+  } catch {
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Recepção / equipe (perfis admin e reception)
+// ---------------------------------------------------------------------------
+
+/** Lista alunos com pontos e quantidade de jogos (`GET /staff/participants`). */
+export function listStaffParticipants(options = {}) {
+  return apiRequest('/staff/participants', options)
+}
+
+/** Detalhes de um aluno: jogos, horários, chefe, faltantes (`GET /staff/participants/{id}`). */
+export function getStaffParticipantDetail(participantId, options = {}) {
+  return apiRequest(`/staff/participants/${participantId}`, options)
+}
+
+/** Corrige o nome e/ou gera novo PIN (`PATCH /staff/participants/{id}`). */
+export function updateStaffParticipant(participantId, changes, options = {}) {
+  return apiRequest(`/staff/participants/${participantId}`, {
+    ...options,
+    method: 'PATCH',
+    body: changes,
+  })
+}
+
+/** Nome e código dos alunos para o chefe de mesa (`GET /game-master/participants`). */
+export function getGameMasterParticipants(options = {}) {
+  return apiRequest('/game-master/participants', options)
+}
+
+/** Resumo do aluno logado: notas, posição e jogos que faltam (`GET /me/summary`). */
+export function getMySummary(options = {}) {
+  return apiRequest('/me/summary', options)
+}
+
+/** Usuários da recepção (`/admin/staff` - admin). */
+export function listAdminStaff(options = {}) {
+  return apiRequest('/admin/staff', options)
+}
+
+export function createAdminStaff({ username, password }, options = {}) {
+  return apiRequest('/admin/staff', { ...options, method: 'POST', body: { username, password } })
+}
+
+export function deleteAdminStaff(staffId, options = {}) {
+  return apiRequest(`/admin/staff/${staffId}`, { ...options, method: 'DELETE' })
 }

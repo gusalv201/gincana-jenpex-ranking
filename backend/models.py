@@ -9,13 +9,13 @@ class User(SQLModel, table=True):
     __tablename__ = "user"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('participant', 'table_master', 'admin')",
+            "role IN ('participant', 'table_master', 'admin', 'reception')",
             name="ck_user_role",
         ),
         CheckConstraint(
             "(role = 'participant' AND participant_code IS NOT NULL "
             "AND length(participant_code) = 6) OR "
-            "(role IN ('table_master', 'admin') AND participant_code IS NULL)",
+            "(role IN ('table_master', 'admin', 'reception') AND participant_code IS NULL)",
             name="ck_user_participant_code",
         ),
     )

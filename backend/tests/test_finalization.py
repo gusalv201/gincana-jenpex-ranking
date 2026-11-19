@@ -33,6 +33,7 @@ class _ExecResult:
 
 class _FakeRequest:
     client = None
+    headers = {}
 
 
 class _LoginSession:
@@ -161,20 +162,21 @@ class FinalizationTests(unittest.TestCase):
         self.assertIn("security", paths["/api/auth/register"]["post"])
         self.assertNotIn("security", paths["/api/auth/login"]["post"])
 
-    def test_public_ranking_contains_only_top_five_safe_entries(self):
+    def test_public_ranking_is_sequential_with_names_and_safe(self):
         engine = create_engine("sqlite://")
         SQLModel.metadata.create_all(engine)
         with Session(engine) as session:
+            # Ordem de cadastro diferente da ordem alfabética dos códigos, para
+            # provar que o desempate é por cadastro e não pelo código.
+            codes = ("ZZZ001", "AAA002", "MMM003", "BBB004", "CCC005", "DDD006", "EEE007")
             users = [
                 models.User(
-                    username=f"player-{index}",
+                    username=f"Aluno {index}",
                     password_hash="not-returned",
                     role="participant",
                     participant_code=code,
                 )
-                for index, code in enumerate(
-                    ("AAA001", "AAA002", "AAA003", "AAA004", "AAA005", "AAA006", "AAA007")
-                )
+                for index, code in enumerate(codes, start=1)
             ]
             inactive = models.User(
                 username="inactive",
@@ -192,84 +194,69 @@ class FinalizationTests(unittest.TestCase):
             session.add_all(users)
             session.add_all([inactive, administrator])
             session.flush()
-            games = [models.Game(name="game")]
+            games = [models.Game(name="Robótica"), models.Game(name="Quiz")]
             session.add_all(games)
             session.flush()
 
-            totals = (30, 30, 20, 10, 5, 0, 0)
-            for user, total in zip(users, totals):
-                if total:
-                    session.add(
-                        models.Score(
-                            participant_id=user.id,
-                            game_id=games[0].id,
-                            points=total,
-                            created_at=datetime.now(timezone.utc),
+            scores = {0: (20, 10), 1: (30, None), 2: (20, None), 3: (10, None), 4: (5, None)}
+            for index, (first, second) in scores.items():
+                for game, points in zip(games, (first, second)):
+                    if points:
+                        session.add(
+                            models.Score(
+                                participant_id=users[index].id,
+                                game_id=game.id,
+                                points=points,
+                                created_at=datetime.now(timezone.utc),
+                            )
                         )
-                    )
+            session.add(
+                models.Score(
+                    participant_id=inactive.id,
+                    game_id=games[0].id,
+                    points=100,
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
             session.commit()
 
-            result = asyncio.run(
-                read_display_ranking(_AsyncSessionAdapter(session))
-            )
+            result = asyncio.run(read_display_ranking(_AsyncSessionAdapter(session)))
             payload = result.model_dump()
             participant_count = asyncio.run(
                 get_general_ranking(_AsyncSessionAdapter(session))
             ).total_participants
 
         self.assertEqual(
-            [(entry.position, entry.participant_code, entry.total_points) for entry in result.ranking],
+            [(e.position, e.participant_code, e.username, e.total_points) for e in result.ranking],
             [
-                (1, "AAA001", 30),
-                (1, "AAA002", 30),
-                (3, "AAA003", 20),
-                (4, "AAA004", 10),
-                (5, "AAA005", 5),
+                (1, "ZZZ001", "Aluno 1", 30),  # empate 30 x 30: cadastrou primeiro
+                (2, "AAA002", "Aluno 2", 30),
+                (3, "MMM003", "Aluno 3", 20),
+                (4, "BBB004", "Aluno 4", 10),
+                (5, "CCC005", "Aluno 5", 5),
+                (6, "DDD006", "Aluno 6", 0),
+                (7, "EEE007", "Aluno 7", 0),
             ],
         )
-        self.assertEqual(set(payload), {"ranking"})
-        self.assertEqual(len(result.ranking), 5)
-        self.assertNotIn("username", repr(payload))
+        self.assertEqual(
+            [(g.game_name, g.points) for g in result.ranking[0].games],
+            [("Robótica", 20), ("Quiz", 10)],
+        )
+        self.assertEqual(result.games, ["Robótica", "Quiz"])
+        self.assertEqual(set(payload), {"games", "ranking"})
         self.assertNotIn("password_hash", repr(payload))
+        self.assertNotIn("not-returned", repr(payload))
         self.assertNotIn("ZZZ999", repr(payload))
         self.assertNotIn("administrator", repr(payload))
         self.assertEqual(participant_count, 7)
 
-    def test_ranking_includes_all_participants_tied_for_fifth(self):
-        ranking = self._ranking_for_points((40, 30, 20, 10, 5, 5, 0))
+    def test_ranking_is_limited_to_ten_without_repeated_positions(self):
+        ranking = self._ranking_for_points((5,) * 12)
 
+        self.assertEqual([entry.position for entry in ranking], list(range(1, 11)))
         self.assertEqual(
-            [
-                (entry.position, entry.participant_code, entry.total_points)
-                for entry in ranking
-            ],
-            [
-                (1, "AAA001", 40),
-                (2, "AAA002", 30),
-                (3, "AAA003", 20),
-                (4, "AAA004", 10),
-                (5, "AAA005", 5),
-                (5, "AAA006", 5),
-            ],
-        )
-
-    def test_ranking_includes_all_zero_point_participants_tied_for_fifth(self):
-        ranking = self._ranking_for_points((40, 30, 20, 10, 0, 0, 0))
-
-        self.assertEqual(
-            [
-                (entry.position, entry.participant_code, entry.total_points)
-                for entry in ranking
-            ],
-            [
-                (1, "AAA001", 40),
-                (2, "AAA002", 30),
-                (3, "AAA003", 20),
-                (4, "AAA004", 10),
-                (5, "AAA005", 0),
-                (5, "AAA006", 0),
-                (5, "AAA007", 0),
-            ],
+            [entry.participant_code for entry in ranking],
+            [f"AAA{index:03d}" for index in range(1, 11)],
         )
 
     def test_database_rejects_duplicate_score_for_participant_and_game(self):

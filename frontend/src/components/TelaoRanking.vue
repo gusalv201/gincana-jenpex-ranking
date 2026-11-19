@@ -24,7 +24,7 @@
         <div class="title-wrap">
           <div class="event-pill">7ª JENPEX 2026 • IFMT CAMPO NOVO DO PARECIS</div>
           <h2>RANKING GERAL TOP 10</h2>
-          <p v-if="isServerOnline">Classificação oficial acumulada em tempo real</p>
+          <p v-if="isServerOnline">Classificação oficial em tempo real • empate: vence quem se cadastrou primeiro</p>
           <p v-else class="subtitle-disconnected">
             Sincronização pausada — aguardando reconexão com o servidor local
           </p>
@@ -45,10 +45,6 @@
           <div class="stat-box">
             <span class="stat-label">CLASSIFICADOS NO TOP 10</span>
             <span class="stat-value">{{ top10Ranking.length }} <small>/ 10</small></span>
-          </div>
-          <div class="stat-box stat-box-accent">
-            <span class="stat-label">PONTOS ACUMULADOS</span>
-            <span class="stat-value text-orange">{{ totalPontosTop10 }}</span>
           </div>
         </div>
 
@@ -76,10 +72,16 @@
             {{ obterIniciais(top3[1].nomeExibicao) }}
           </div>
           <h3 class="participant-name">{{ top3[1].nomeExibicao }}</h3>
-          <span class="participant-code-tag">Código #{{ top3[1].participant_code }}</span>
+          <span class="participant-code-tag">#{{ top3[1].participant_code }}</span>
+          <div class="game-chips podium-chips">
+            <span v-for="jogo in colunasJogos" :key="jogo"
+              :class="['game-chip', pontosNoJogo(top3[1], jogo) === null ? 'chip-empty' : '']">
+              {{ jogo }} <b>{{ pontosNoJogo(top3[1], jogo) ?? '–' }}</b>
+            </span>
+          </div>
           <div class="participant-points">
             <span class="points-num">{{ top3[1].total_pontos }}</span>
-            <span class="points-label">PTS</span>
+            <span class="points-label">PTS TOTAL</span>
           </div>
           <div class="pedestal pedestal-silver"></div>
         </div>
@@ -92,10 +94,16 @@
             {{ obterIniciais(top3[0].nomeExibicao) }}
           </div>
           <h3 class="participant-name gold-name">{{ top3[0].nomeExibicao }}</h3>
-          <span class="participant-code-tag">Código #{{ top3[0].participant_code }}</span>
+          <span class="participant-code-tag">#{{ top3[0].participant_code }}</span>
+          <div class="game-chips podium-chips">
+            <span v-for="jogo in colunasJogos" :key="jogo"
+              :class="['game-chip', pontosNoJogo(top3[0], jogo) === null ? 'chip-empty' : '']">
+              {{ jogo }} <b>{{ pontosNoJogo(top3[0], jogo) ?? '–' }}</b>
+            </span>
+          </div>
           <div class="participant-points gold-points">
             <span class="points-num">{{ top3[0].total_pontos }}</span>
-            <span class="points-label">PTS</span>
+            <span class="points-label">PTS TOTAL</span>
           </div>
           <div class="pedestal pedestal-gold"></div>
         </div>
@@ -107,10 +115,16 @@
             {{ obterIniciais(top3[2].nomeExibicao) }}
           </div>
           <h3 class="participant-name">{{ top3[2].nomeExibicao }}</h3>
-          <span class="participant-code-tag">Código #{{ top3[2].participant_code }}</span>
+          <span class="participant-code-tag">#{{ top3[2].participant_code }}</span>
+          <div class="game-chips podium-chips">
+            <span v-for="jogo in colunasJogos" :key="jogo"
+              :class="['game-chip', pontosNoJogo(top3[2], jogo) === null ? 'chip-empty' : '']">
+              {{ jogo }} <b>{{ pontosNoJogo(top3[2], jogo) ?? '–' }}</b>
+            </span>
+          </div>
           <div class="participant-points">
             <span class="points-num">{{ top3[2].total_pontos }}</span>
-            <span class="points-label">PTS</span>
+            <span class="points-label">PTS TOTAL</span>
           </div>
           <div class="pedestal pedestal-bronze"></div>
         </div>
@@ -144,12 +158,20 @@
             <div class="pos-badge">{{ participante.posicao }}º</div>
             <div class="row-accent-bar"></div>
             <div class="participant-meta">
-              <span class="participant-title">{{ participante.nomeExibicao }}</span>
-              <span class="participant-sub">Código #{{ participante.participant_code }}</span>
+              <span class="participant-title">
+                {{ participante.nomeExibicao }}
+                <small class="code-inline">#{{ participante.participant_code }}</small>
+              </span>
+              <div class="game-chips">
+                <span v-for="jogo in colunasJogos" :key="jogo"
+                  :class="['game-chip', pontosNoJogo(participante, jogo) === null ? 'chip-empty' : '']">
+                  {{ jogo }} <b>{{ pontosNoJogo(participante, jogo) ?? '–' }}</b>
+                </span>
+              </div>
             </div>
             <div class="participant-score">
               <span class="score-val">{{ participante.total_pontos }}</span>
-              <span class="score-unit">PTS</span>
+              <span class="score-unit">TOTAL</span>
             </div>
           </div>
         </TransitionGroup>
@@ -186,6 +208,10 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  jogos: {
+    type: Array,
+    default: () => []
+  },
   participantesConhecidos: {
     type: Array,
     default: () => []
@@ -217,8 +243,8 @@ const top10Ranking = computed(() => {
     // Prioriza nome completo vindo da API (quando existir) ou do cadastro conhecido;
     // caso o backend retorne apenas participant_code, exibe o código real sem inventar nomes.
     const nomeCompleto =
-      entry.full_name ||
       entry.username ||
+      entry.full_name ||
       entry.nome ||
       conhecido?.nomeExibicao ||
       conhecido?.nome ||
@@ -230,7 +256,8 @@ const top10Ranking = computed(() => {
       posicao: entry.position ?? entry.posicao ?? idx + 1,
       participant_code: code || '---',
       nomeExibicao: nomeCompleto,
-      total_pontos: entry.total_points ?? entry.total_pontos ?? 0
+      total_pontos: entry.total_points ?? entry.total_pontos ?? 0,
+      pontosPorJogo: Object.fromEntries((entry.games || []).map((g) => [g.game_name, g.points]))
     }
   })
 })
@@ -239,9 +266,20 @@ const top3 = computed(() => top10Ranking.value.slice(0, 3))
 
 const colocados4a10 = computed(() => top10Ranking.value.slice(3, 10))
 
-const totalPontosTop10 = computed(() => {
-  return top10Ranking.value.reduce((acc, item) => acc + (item.total_pontos || 0), 0)
+// Colunas de jogos: jogos ativos informados pelo servidor (ou os que aparecem nas notas)
+const colunasJogos = computed(() => {
+  if (props.jogos.length) return props.jogos
+  const nomes = new Set()
+  for (const item of top10Ranking.value) {
+    Object.keys(item.pontosPorJogo).forEach((n) => nomes.add(n))
+  }
+  return [...nomes]
 })
+
+function pontosNoJogo(participante, jogo) {
+  const valor = participante?.pontosPorJogo?.[jogo]
+  return valor === undefined ? null : valor
+}
 
 function obterIniciais(nome) {
   if (!nome) return 'JP'
@@ -314,6 +352,38 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.game-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.podium-chips {
+  justify-content: center;
+  margin: 6px 0;
+}
+.game-chip {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(32, 36, 93, 0.1);
+  color: #20245D;
+  white-space: nowrap;
+}
+.game-chip b {
+  margin-left: 2px;
+}
+.chip-empty {
+  opacity: 0.45;
+}
+.code-inline {
+  font-size: 0.7em;
+  opacity: 0.6;
+  font-weight: 500;
+  margin-left: 6px;
+  letter-spacing: 1px;
+}
+
 /* Container do Ranking com tom azul-acinzentado suave para TV */
 .telao-container {
   max-width: 1760px;
@@ -677,8 +747,9 @@ onUnmounted(() => {
 
 .participant-code-tag {
   display: block;
-  font-size: 0.86rem;
-  font-weight: 700;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.75;
   font-family: var(--font-mono);
   color: #526078;
   margin-bottom: 6px;

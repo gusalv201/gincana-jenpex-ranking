@@ -2,12 +2,13 @@
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from code_generator import participant_code_generator
-from dependencies import SessionDep, require_admin
+from dependencies import SessionDep, require_staff
 from models import User
 from rate_limit import (
     client_ip,
@@ -40,13 +41,13 @@ def _generate_pin() -> str:
     "/register",
     response_model=ParticipantRegistered,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_staff)],
 )
 async def register_participant(
     registration: ParticipantRegister,
     session: SessionDep,
 ) -> ParticipantRegistered:
-    """Cadastra participante. Restrito ao admin (recepção).
+    """Cadastra participante. Restrito ao admin e à equipe da recepção.
 
     Se a senha não for informada, gera um PIN de 6 dígitos, devolvido uma
     única vez nesta resposta para ser entregue ao aluno.
@@ -61,7 +62,7 @@ async def register_participant(
         )
 
     plain_password = registration.password or _generate_pin()
-    password_hash = hash_password(plain_password)
+    password_hash = await run_in_threadpool(hash_password, plain_password)
     for _ in range(_MAX_CODE_GENERATION_ATTEMPTS):
         participant_code = participant_code_generator()
         code_result = await session.exec(
@@ -135,7 +136,7 @@ async def login(
     )
     user = result.first()
     if user is None:
-        verify_password(credentials.password, DUMMY_PASSWORD_HASH)
+        await run_in_threadpool(verify_password, credentials.password, DUMMY_PASSWORD_HASH)
         register_failure(ip, identifier)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -143,7 +144,8 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    password_is_valid = verify_password(
+    password_is_valid = await run_in_threadpool(
+        verify_password,
         credentials.password,
         user.password_hash,
     )
@@ -157,5 +159,5 @@ async def login(
     if user.id is None:
         raise RuntimeError("Persisted user is missing its database identifier.")
 
-    register_success(identifier)
+    register_success(ip, identifier)
     return TokenResponse(access_token=create_access_token(user.id))

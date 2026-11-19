@@ -28,10 +28,10 @@
     <!-- Login obrigatório do administrador (recepção) -->
     <section v-if="!adminLogado" class="form-panel glass-panel admin-login-panel">
       <h3 class="panel-title">🔒 Acesso da Recepção</h3>
-      <p class="field-hint">Somente o administrador pode cadastrar participantes.</p>
+      <p class="field-hint">Entre com um usuário da recepção ou com o administrador.</p>
       <form @submit.prevent="entrarComoAdmin">
         <div class="form-group">
-          <label for="admin-user">Usuário administrador</label>
+          <label for="admin-user">Usuário</label>
           <input id="admin-user" v-model="credenciaisAdmin.username" type="text" class="input-field"
             autocomplete="username" required :disabled="autenticando" />
         </div>
@@ -165,7 +165,10 @@
           <div>
             <h3 class="panel-title">Alunos Cadastrados</h3>
             <span class="list-subtitle">
-              Exibindo {{ participantesFiltrados.length }} de {{ participantes.length }} registros carregados
+              Exibindo {{ participantesFiltrados.length }} de {{ listaParticipantes.length }} alunos
+              <button type="button" class="btn-link" :disabled="carregandoLista" @click="carregarParticipantes">
+                {{ carregandoLista ? '⏳' : '🔄 Atualizar' }}
+              </button>
             </span>
           </div>
         </div>
@@ -189,16 +192,13 @@
             class="participante-item"
           >
             <div class="participante-main">
-              <strong class="participante-nome">{{ aluno.nome || aluno.username }}</strong>
-              <span v-if="aluno.identificador" class="participante-tag">
-                {{ aluno.identificador }}
-              </span>
+              <strong class="participante-nome">{{ aluno.username }}</strong>
+              <small v-if="aluno.participant_code" class="code-small">#{{ aluno.participant_code }}</small>
             </div>
             <div class="participante-meta">
-              <span v-if="aluno.participant_code" class="code-pill">
-                #{{ aluno.participant_code }}
-              </span>
-              <span class="status-pill">Disponível</span>
+              <span class="status-pill">{{ aluno.total_points ?? 0 }} pts • {{ aluno.games_played ?? 0 }} jogo(s)</span>
+              <button v-if="aluno.id" type="button" class="btn-link" :disabled="corrigindo" @click="corrigirNome(aluno)">✏️ Nome</button>
+              <button v-if="aluno.id" type="button" class="btn-link" :disabled="corrigindo" @click="gerarNovoPin(aluno)">🔑 Novo PIN</button>
             </div>
           </div>
         </div>
@@ -212,14 +212,8 @@
           </p>
         </div>
 
-        <!-- Nota Técnica Transparente sobre Limitação Atual do Backend -->
-        <div class="banner-alert banner-limitation limitation-note">
-          <div>
-            <strong>ℹ️ Status da integração com o servidor:</strong>
-            <p>
-              O backend atual (<code>POST /auth/register</code>) ainda exige o campo <code>password</code> e não expõe um endpoint <code>GET</code> para listar todos os participantes cadastrados em outros dispositivos. Somente cadastros confirmados pelo servidor são exibidos acima.
-            </p>
-          </div>
+        <div v-if="avisoLista" :class="['banner-alert', avisoListaErro ? 'banner-error' : 'banner-success']" role="status">
+          <div><p>{{ avisoLista }}</p></div>
         </div>
       </section>
     </div>
@@ -227,8 +221,13 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { registerParticipant, login, getMyProfile, clearAuthToken } from '../services/api.js'
+import { ref, computed, onMounted } from 'vue'
+import {
+  registerParticipant, login, getMyProfile, clearAuthToken, retomarSessao,
+  listStaffParticipants, updateStaffParticipant,
+} from '../services/api.js'
+
+const PERFIS_RECEPCAO = ['admin', 'reception']
 
 const props = defineProps({
   participantes: {
@@ -268,13 +267,14 @@ async function entrarComoAdmin() {
       password: credenciaisAdmin.value.password
     })
     const perfil = await getMyProfile()
-    if (perfil?.role !== 'admin') {
+    if (!PERFIS_RECEPCAO.includes(perfil?.role)) {
       clearAuthToken()
-      erroLogin.value = 'Este usuário não é administrador.'
+      erroLogin.value = 'Este usuário não tem acesso à recepção.'
       return
     }
     credenciaisAdmin.value.password = ''
     adminLogado.value = true
+    await carregarParticipantes()
   } catch (error) {
     erroLogin.value = error.message || 'Falha na autenticação.'
   } finally {
@@ -283,6 +283,74 @@ async function entrarComoAdmin() {
 }
 
 const termoPesquisa = ref('')
+const participantesServidor = ref([])
+const carregandoLista = ref(false)
+const corrigindo = ref(false)
+const avisoLista = ref('')
+const avisoListaErro = ref(false)
+
+// Lista oficial vem do servidor (todos os alunos, de qualquer dispositivo)
+const listaParticipantes = computed(() => participantesServidor.value)
+
+function avisarLista(texto, erro = false) {
+  avisoLista.value = texto
+  avisoListaErro.value = erro
+}
+
+async function carregarParticipantes() {
+  carregandoLista.value = true
+  try {
+    participantesServidor.value = await listStaffParticipants()
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) {
+      clearAuthToken()
+      adminLogado.value = false
+      erroLogin.value = 'Sessão expirada. Entre novamente.'
+    } else {
+      avisarLista(error.message || 'Não foi possível carregar a lista de alunos.', true)
+    }
+  } finally {
+    carregandoLista.value = false
+  }
+}
+
+async function corrigirNome(aluno) {
+  const novoNome = window.prompt(`Novo nome para "${aluno.username}" (código ${aluno.participant_code}):`, aluno.username)
+  if (novoNome === null) return
+  const limpo = novoNome.trim().replace(/\s+/g, ' ')
+  if (limpo.length < 3 || limpo === aluno.username) return
+  corrigindo.value = true
+  try {
+    await updateStaffParticipant(aluno.id, { username: limpo })
+    avisarLista(`Nome corrigido para "${limpo}".`)
+    await carregarParticipantes()
+  } catch (error) {
+    avisarLista(error.status === 409 ? 'Já existe um aluno com esse nome. Acrescente a turma, ex.: "Nome (2º Info)".' : error.message, true)
+  } finally {
+    corrigindo.value = false
+  }
+}
+
+async function gerarNovoPin(aluno) {
+  if (!window.confirm(`Gerar um novo PIN para "${aluno.username}"? O PIN antigo deixa de funcionar.`)) return
+  corrigindo.value = true
+  try {
+    const resposta = await updateStaffParticipant(aluno.id, { reset_password: true })
+    avisarLista(`Novo PIN de ${aluno.username} (código ${aluno.participant_code}): ${resposta.password} — anote e entregue ao aluno.`)
+  } catch (error) {
+    avisarLista(error.message, true)
+  } finally {
+    corrigindo.value = false
+  }
+}
+
+onMounted(async () => {
+  const perfil = await retomarSessao(PERFIS_RECEPCAO)
+  if (perfil) {
+    adminLogado.value = true
+    await carregarParticipantes()
+  }
+})
 const enviando = ref(false)
 const erroMensagem = ref('')
 const exigirIdentificadorHomonimo = ref(false)
@@ -307,18 +375,15 @@ function montarUsernameServidor(nome, identificador) {
 }
 
 const totalParticipantesExibido = computed(() => {
-  if (typeof props.totalServidor === 'number' && props.totalServidor > props.participantes.length) {
-    return props.totalServidor
-  }
-  return props.participantes.length
+  return listaParticipantes.value.length
 })
 
 const participantesFiltrados = computed(() => {
   const busca = normalizarTexto(termoPesquisa.value)
   if (!busca) {
-    return props.participantes
+    return listaParticipantes.value
   }
-  return props.participantes.filter((p) => {
+  return listaParticipantes.value.filter((p) => {
     const nome = normalizarTexto(p.nome || p.username)
     const ident = normalizarTexto(p.identificador)
     const codigo = normalizarTexto(p.participant_code)
@@ -356,7 +421,7 @@ async function confirmarCadastro() {
   const nomeNorm = normalizarTexto(nomeLimpo)
   const identNorm = normalizarTexto(identLimpo)
 
-  const mesmoNomeExistente = props.participantes.find(
+  const mesmoNomeExistente = listaParticipantes.value.find(
     (p) => normalizarTexto(p.nome || p.username) === nomeNorm
   )
 
@@ -403,6 +468,7 @@ async function confirmarCadastro() {
     ultimoCadastrado.value = registroConfirmado
     exigirIdentificadorHomonimo.value = false
     emit('participante-cadastrado', registroConfirmado)
+    carregarParticipantes()
 
     // Limpa os campos após confirmação do servidor
     form.value.nome = ''
@@ -431,6 +497,28 @@ async function confirmarCadastro() {
 </script>
 
 <style scoped>
+.code-small {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-left: 6px;
+  letter-spacing: 1px;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+}
+
+.btn-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .admin-login-panel {
   max-width: 480px;
   margin: 24px auto;

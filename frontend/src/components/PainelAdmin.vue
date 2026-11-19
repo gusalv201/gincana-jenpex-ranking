@@ -94,19 +94,45 @@
         </div>
       </section>
 
+      <!-- EQUIPE DA RECEPÇÃO -->
+      <section v-if="aba === 'equipe'" class="glass-panel admin-card">
+        <h3>Novo usuário da recepção</h3>
+        <p class="field-hint">
+          A recepção pode cadastrar alunos, corrigir nomes, gerar novo PIN e ver os resultados.
+          Não pode excluir alunos, criar jogos nem chefes de mesa.
+        </p>
+        <form class="linha-form" @submit.prevent="criarEquipe">
+          <input v-model="novaEquipe.username" class="input-field" placeholder="Usuário (ex.: recepcao_ana)"
+            maxlength="100" autocomplete="off" required />
+          <input v-model="novaEquipe.password" class="input-field" placeholder="Senha (mín. 10 caracteres)"
+            minlength="10" maxlength="128" autocomplete="new-password" required />
+          <button class="btn-primary" :disabled="carregando">Criar usuário</button>
+        </form>
+
+        <h3>Usuários da recepção ({{ equipe.length }})</h3>
+        <p v-if="!equipe.length" class="field-hint">Nenhum usuário da recepção cadastrado.</p>
+        <div v-for="u in equipe" :key="u.id" class="item">
+          <div class="item-info"><strong>{{ u.username }}</strong></div>
+          <div class="item-acoes">
+            <button class="btn-danger" :disabled="carregando" @click="removerEquipe(u)">🗑️ Remover acesso</button>
+          </div>
+        </div>
+      </section>
+
       <!-- ALUNOS -->
       <section v-if="aba === 'alunos'" class="glass-panel admin-card">
         <div class="linha-form">
           <input v-model="busca" class="input-field" placeholder="🔎 Buscar por nome ou código" />
         </div>
         <h3>Alunos cadastrados ({{ alunosFiltrados.length }} de {{ alunos.length }})</h3>
+        <p class="field-hint">Detalhes de cada aluno (horários, jogos que faltam) ficam em <a href="#resultados">📊 Resultados</a>.</p>
         <p class="field-hint">Para cadastrar novos alunos, use a aba Recepção.</p>
         <p v-if="!alunosFiltrados.length" class="field-hint">Nenhum aluno encontrado.</p>
         <div v-for="aluno in alunosFiltrados" :key="aluno.id" class="item">
           <div class="item-info">
-            <strong>{{ aluno.username }}</strong>
+            <strong>{{ aluno.username }} <small class="code-small">#{{ aluno.participant_code }}</small></strong>
             <span class="sub">
-              Código <b>{{ aluno.participant_code }}</b> • {{ aluno.total_points }} pts •
+              {{ aluno.total_points }} pts •
               {{ aluno.games_played }} jogo(s)
             </span>
           </div>
@@ -120,9 +146,10 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
-  login, getMyProfile, clearAuthToken,
+  login, getMyProfile, clearAuthToken, retomarSessao,
+  listAdminStaff, createAdminStaff, deleteAdminStaff,
   listAdminGames, createAdminGame, listAdminMasters, createAdminMaster, assignMasterToGame,
   listAdminParticipants, deleteAdminParticipant,
 } from '../services/api.js'
@@ -131,6 +158,7 @@ const abas = [
   { id: 'jogos', rotulo: '🎮 Jogos' },
   { id: 'chefes', rotulo: '🧑‍⚖️ Chefes de mesa' },
   { id: 'alunos', rotulo: '🎓 Alunos' },
+  { id: 'equipe', rotulo: '🧾 Equipe da recepção' },
 ]
 
 const logado = ref(false)
@@ -144,6 +172,8 @@ const mensagemErro = ref(false)
 const jogos = ref([])
 const chefes = ref([])
 const alunos = ref([])
+const equipe = ref([])
+const novaEquipe = ref({ username: '', password: '' })
 const vinculo = ref({})
 const novoJogo = ref('')
 const novoChefe = ref({ username: '', password: '' })
@@ -212,10 +242,13 @@ function sair() {
 async function carregarTudo() {
   carregando.value = true
   try {
-    const [g, m, a] = await Promise.all([listAdminGames(), listAdminMasters(), listAdminParticipants()])
+    const [g, m, a, e] = await Promise.all([
+      listAdminGames(), listAdminMasters(), listAdminParticipants(), listAdminStaff(),
+    ])
     jogos.value = g
     chefes.value = m
     alunos.value = a
+    equipe.value = e
   } catch (e) {
     tratarErro(e)
   } finally {
@@ -262,6 +295,27 @@ async function vincular(jogo) {
   }
 }
 
+async function criarEquipe() {
+  const username = novaEquipe.value.username.trim()
+  const password = novaEquipe.value.password
+  if (password.length < 10) return avisar('A senha da recepção precisa ter pelo menos 10 caracteres.', true)
+  if (await executar(() => createAdminStaff({ username, password }), `Usuário da recepção "${username}" criado.`)) {
+    novaEquipe.value = { username: '', password: '' }
+  }
+}
+
+async function removerEquipe(u) {
+  if (!window.confirm(`Remover o acesso de "${u.username}" à recepção?`)) return
+  await executar(() => deleteAdminStaff(u.id), `Acesso de "${u.username}" removido.`)
+}
+
+onMounted(async () => {
+  if (await retomarSessao(['admin'])) {
+    logado.value = true
+    await carregarTudo()
+  }
+})
+
 async function excluirAluno(aluno) {
   const aviso = aluno.games_played
     ? `\n\nATENÇÃO: as ${aluno.games_played} pontuação(ões) dele (${aluno.total_points} pts) também serão apagadas.`
@@ -272,6 +326,7 @@ async function excluirAluno(aluno) {
 </script>
 
 <style scoped>
+.code-small { font-size: 0.72em; opacity: 0.7; font-weight: 500; letter-spacing: 1px; }
 .admin-container {
   max-width: 980px;
   margin: 0 auto;

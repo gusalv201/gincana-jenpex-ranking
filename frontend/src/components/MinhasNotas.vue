@@ -1,6 +1,6 @@
 <template>
   <div class="notas-container">
-    <section v-if="!perfil" class="glass-panel notas-card">
+    <section v-if="!resumo" class="glass-panel notas-card">
       <span class="section-tag">ÁREA DO ALUNO</span>
       <h2>Minhas Notas</h2>
       <p class="field-hint">Informe o código recebido na recepção e sua senha/PIN.</p>
@@ -30,20 +30,32 @@
       <div class="notas-header">
         <div>
           <span class="section-tag">PARTICIPANTE</span>
-          <h2>{{ perfil.username }}</h2>
-          <span class="codigo">Código {{ perfil.participant_code }}</span>
+          <h2>{{ resumo.username }} <small class="codigo">#{{ resumo.participant_code }}</small></h2>
+          <span v-if="resumo.position" class="posicao">
+            {{ resumo.position }}º lugar de {{ resumo.total_participants }}
+          </span>
         </div>
         <div class="total">
           <span class="total-label">TOTAL</span>
-          <span class="total-valor">{{ total }}</span>
+          <span class="total-valor">{{ resumo.total_points }}</span>
         </div>
       </div>
 
-      <p v-if="notas.length === 0" class="field-hint">Você ainda não tem pontuações registradas.</p>
+      <h3>✅ Jogos que você já fez ({{ resumo.played.length }})</h3>
+      <p v-if="resumo.played.length === 0" class="field-hint">Você ainda não tem pontuações registradas.</p>
       <ul v-else class="lista-notas">
-        <li v-for="(nota, i) in notas" :key="i">
-          <span>{{ nota.game_name }}</span>
+        <li v-for="nota in resumo.played" :key="nota.game_id">
+          <span>{{ nota.game_name }} <small class="hora">{{ formatarHora(nota.created_at) }}</small></span>
           <strong>{{ nota.points }} pts</strong>
+        </li>
+      </ul>
+
+      <h3>⏳ Jogos que faltam ({{ resumo.missing.length }})</h3>
+      <p v-if="resumo.missing.length === 0" class="field-hint">🎉 Você já participou de todos os jogos!</p>
+      <ul v-else class="lista-notas lista-faltam">
+        <li v-for="jogo in resumo.missing" :key="jogo.game_id">
+          <span>{{ jogo.game_name }}</span>
+          <span class="pendente">pendente</span>
         </li>
       </ul>
 
@@ -62,17 +74,22 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { login, getMyProfile, getMyScores, clearAuthToken } from '../services/api.js'
+import { ref } from 'vue'
+import { login, getMyProfile, getMySummary, clearAuthToken } from '../services/api.js'
 
 const codigo = ref('')
 const senha = ref('')
-const perfil = ref(null)
-const notas = ref([])
+const resumo = ref(null)
 const erro = ref('')
 const carregando = ref(false)
 
-const total = computed(() => notas.value.reduce((soma, n) => soma + n.points, 0))
+function formatarHora(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
 
 async function entrar() {
   if (carregando.value) return
@@ -86,12 +103,11 @@ async function entrar() {
       erro.value = 'Esta área é exclusiva para alunos participantes.'
       return
     }
-    perfil.value = dados
     senha.value = ''
-    notas.value = await getMyScores()
+    resumo.value = await getMySummary()
   } catch (e) {
     clearAuthToken()
-    perfil.value = null
+    resumo.value = null
     erro.value = e.status === 401 ? 'Código ou senha incorretos.' : e.message
   } finally {
     carregando.value = false
@@ -102,7 +118,7 @@ async function atualizar() {
   erro.value = ''
   carregando.value = true
   try {
-    notas.value = await getMyScores()
+    resumo.value = await getMySummary()
   } catch (e) {
     if (e.status === 401) {
       sair()
@@ -117,15 +133,14 @@ async function atualizar() {
 
 function sair() {
   clearAuthToken()
-  perfil.value = null
-  notas.value = []
+  resumo.value = null
   codigo.value = ''
 }
 </script>
 
 <style scoped>
 .notas-container {
-  max-width: 520px;
+  max-width: 560px;
   margin: 0 auto;
   padding: 16px;
 }
@@ -133,9 +148,9 @@ function sair() {
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
-.notas-card h2 {
+.notas-card h2, .notas-card h3 {
   margin: 4px 0;
 }
 .input-codigo {
@@ -154,8 +169,12 @@ function sair() {
   gap: 12px;
 }
 .codigo {
-  opacity: 0.8;
+  font-size: 0.6em;
+  opacity: 0.7;
   letter-spacing: 2px;
+}
+.posicao {
+  font-weight: 700;
 }
 .total {
   display: flex;
@@ -181,9 +200,23 @@ function sair() {
 .lista-notas li {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   padding: 12px 14px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
+}
+.lista-faltam li {
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  background: transparent;
+}
+.hora {
+  opacity: 0.7;
+  margin-left: 6px;
+}
+.pendente {
+  font-size: 0.8rem;
+  opacity: 0.8;
 }
 .acoes {
   display: flex;

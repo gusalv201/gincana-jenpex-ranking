@@ -35,13 +35,13 @@ async def list_scores_for_game(
     game_id: int,
 ) -> list[tuple[str | None, int, datetime]]:
     result = await session.exec(
-        select(User.participant_code, Score.points, Score.created_at)
+        select(User.participant_code, Score.points, Score.created_at, User.username)
         .join(User, User.id == Score.participant_id)
         .where(Score.game_id == game_id)
         .order_by(Score.created_at, User.participant_code)
     )
     return [
-        (row[0], row[1], row[2])
+        (row[0], row[1], row[2], row[3])
         for row in result.all()
     ]
 

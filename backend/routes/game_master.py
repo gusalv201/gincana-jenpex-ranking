@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends, status
 
 from dependencies import CurrentUserDep, SessionDep, require_table_master
+from sqlmodel import select
+
+from models import User
 from schemas import (
     GameMasterGameResponse,
+    GameMasterParticipant,
     GameMasterScoreResponse,
     ScoreSubmission,
 )
@@ -53,10 +57,11 @@ async def read_game_scores(
     return [
         GameMasterScoreResponse(
             participant_code=participant_code,
+            username=username,
             points=points,
             created_at=created_at,
         )
-        for participant_code, points, created_at in rows
+        for participant_code, points, created_at, username in rows
     ]
 
 
@@ -87,8 +92,24 @@ async def add_game_score(
         participant_code=score_data.participant_code,
         points=score_data.points,
     )
+    participant = await session.get(User, score.participant_id)
     return GameMasterScoreResponse(
         participant_code=score_data.participant_code,
+        username=participant.username if participant else None,
         points=score.points,
         created_at=score.created_at,
     )
+
+
+@router.get("/participants", response_model=list[GameMasterParticipant])
+async def read_participants(session: SessionDep) -> list[GameMasterParticipant]:
+    """Nome e código dos alunos ativos, para o chefe de mesa localizar quem vai jogar."""
+    result = await session.exec(
+        select(User.participant_code, User.username)
+        .where(User.role == "participant", User.is_active.is_(True))
+        .order_by(User.username.asc())
+    )
+    return [
+        GameMasterParticipant(participant_code=code, username=name)
+        for code, name in result.all()
+    ]

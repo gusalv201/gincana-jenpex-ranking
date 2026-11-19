@@ -48,6 +48,13 @@
           🎓 Minhas Notas (#notas)
         </a>
         <a
+          href="#resultados"
+          :class="['nav-btn', currentView === 'resultados' ? 'active' : '']"
+          @click.prevent="$emit('change-view', 'resultados')"
+        >
+          📊 Resultados (#resultados)
+        </a>
+        <a
           href="#admin"
           :class="['nav-btn', currentView === 'admin' ? 'active' : '']"
           @click.prevent="$emit('change-view', 'admin')"
