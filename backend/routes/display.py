@@ -12,4 +12,4 @@ async def read_display_ranking(
     session: SessionDep,
 ) -> DisplayRankingResponse:
     ranking = await get_general_ranking(session)
-    return DisplayRankingResponse(ranking=ranking.ranking)
+    return DisplayRankingResponse(games=ranking.games, ranking=ranking.ranking)

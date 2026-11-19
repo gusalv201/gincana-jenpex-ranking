@@ -3,7 +3,8 @@ from sqlmodel import select
 
 from dependencies import CurrentUserDep, SessionDep, get_current_user
 from models import Game, Score
-from schemas import AuthenticatedUser, PersonalScore
+from schemas import AuthenticatedUser, MySummary, PersonalScore
+from services.participants import participant_progress
 
 router = APIRouter(
     prefix="/me",
@@ -40,3 +41,24 @@ async def read_my_scores(
         PersonalScore(game_name=game_name, points=points)
         for game_name, points in result.all()
     ]
+
+
+@router.get("/summary", response_model=MySummary)
+async def read_my_summary(
+    current_user: CurrentUserDep,
+    session: SessionDep,
+) -> MySummary:
+    """Notas do aluno, posição no ranking e jogos que ainda faltam."""
+    if current_user.role != "participant":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Participant role required",
+        )
+    progress = await participant_progress(session, current_user.id)
+    for game in progress["played"]:
+        game.master_username = None  # o aluno não precisa ver quem foi o chefe
+    return MySummary(
+        username=current_user.username,
+        participant_code=current_user.participant_code,
+        **progress,
+    )

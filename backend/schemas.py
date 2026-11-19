@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-UserRole = Literal["participant", "table_master", "admin"]
+UserRole = Literal["participant", "table_master", "admin", "reception"]
 
 
 class ParticipantRegister(BaseModel):
@@ -105,6 +105,7 @@ class ScoreSubmission(BaseModel):
 
 class GameMasterScoreResponse(BaseModel):
     participant_code: str
+    username: str | None = None
     points: int = Field(ge=1, le=100)
     created_at: datetime
 
@@ -120,18 +121,27 @@ class ScoreCorrectionResponse(BaseModel):
     points: int = Field(ge=1, le=100)
 
 
+class RankingGameScore(BaseModel):
+    game_name: str
+    points: int = Field(ge=1, le=100)
+
+
 class RankingEntry(BaseModel):
     position: int = Field(ge=1)
     participant_code: str
+    username: str
     total_points: int = Field(ge=0)
+    games: list[RankingGameScore] = []
 
 
 class RankingResponse(BaseModel):
     total_participants: int = Field(ge=0)
+    games: list[str] = []
     ranking: list[RankingEntry]
 
 
 class DisplayRankingResponse(BaseModel):
+    games: list[str] = []
     ranking: list[RankingEntry]
 
 
@@ -142,3 +152,66 @@ class AdminParticipantListItem(BaseModel):
     is_active: bool
     total_points: int = Field(ge=0)
     games_played: int = Field(ge=0)
+
+
+class GameMasterParticipant(BaseModel):
+    participant_code: str
+    username: str
+
+
+class StaffCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=10, max_length=128)
+
+
+class StaffSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    is_active: bool
+
+
+class ParticipantUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str | None = Field(default=None, min_length=1, max_length=100)
+    # True gera um novo PIN de 6 dígitos (devolvido uma única vez na resposta).
+    reset_password: bool = False
+
+
+class PlayedGame(BaseModel):
+    game_id: int
+    game_name: str
+    points: int = Field(ge=1, le=100)
+    created_at: datetime
+    master_username: str | None = None
+
+
+class MissingGame(BaseModel):
+    game_id: int
+    game_name: str
+
+
+class ParticipantDetail(BaseModel):
+    id: int
+    username: str
+    participant_code: str
+    is_active: bool
+    position: int | None = None
+    total_participants: int = Field(ge=0)
+    total_points: int = Field(ge=0)
+    played: list[PlayedGame]
+    missing: list[MissingGame]
+
+
+class MySummary(BaseModel):
+    username: str
+    participant_code: str
+    position: int | None = None
+    total_participants: int = Field(ge=0)
+    total_points: int = Field(ge=0)
+    played: list[PlayedGame]
+    missing: list[MissingGame]

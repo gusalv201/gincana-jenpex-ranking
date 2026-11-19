@@ -32,10 +32,14 @@
       <!-- Interface 5: Administração (/#admin) -->
       <PainelAdmin v-else-if="currentView === 'admin'" />
 
+      <!-- Interface 6: Resultados detalhados por aluno (/#resultados) -->
+      <ResultadosAlunos v-else-if="currentView === 'resultados'" />
+
       <!-- Interface 3: Ranking Geral Top 10 para TV (/#ranking) -->
       <TelaoRanking
         v-else
         :ranking="ranking"
+        :jogos="jogosRanking"
         :participantesConhecidos="participantesConhecidos"
         :lastScoreToast="lastScoreToast"
         :isServerOnline="isServerOnline"
@@ -53,9 +57,10 @@ import PainelChefeMesa from './components/PainelChefeMesa.vue'
 import TelaoRanking from './components/TelaoRanking.vue'
 import MinhasNotas from './components/MinhasNotas.vue'
 import PainelAdmin from './components/PainelAdmin.vue'
+import ResultadosAlunos from './components/ResultadosAlunos.vue'
 import { getDisplayRanking } from './services/api.js'
 
-const ROTAS_VALIDAS = new Set(['cadastro', 'mesa', 'ranking', 'notas', 'admin'])
+const ROTAS_VALIDAS = new Set(['cadastro', 'mesa', 'ranking', 'notas', 'admin', 'resultados'])
 
 function resolverRotaPorHash() {
   const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase()
@@ -68,6 +73,7 @@ function resolverRotaPorHash() {
 const currentView = ref(resolverRotaPorHash())
 const isServerOnline = ref(false)
 const ranking = ref([])
+const jogosRanking = ref([])
 const participantesConhecidos = ref([])
 const lastScoreToast = ref(null)
 const ultimaAtualizacaoRanking = ref('')
@@ -161,6 +167,7 @@ async function sincronizarComServidor() {
 
       // Preserva exatamente os dados reais enviados pelo servidor (até 10 posições no componente TelaoRanking)
       ranking.value = novaLista
+      jogosRanking.value = Array.isArray(data.games) ? data.games : []
     }
   } catch {
     // Em caso de falha, sinaliza indisponibilidade e preserva os dados já existentes em tela

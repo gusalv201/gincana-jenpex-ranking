@@ -14,6 +14,7 @@ from routes.auth import router as auth_router
 from routes.display import router as display_router
 from routes.game_master import router as game_master_router
 from routes.me import router as me_router
+from routes.staff import router as staff_router
 
 
 def parse_cors_origins(value: str | None) -> list[str]:
@@ -56,12 +57,23 @@ async def lifespan(app: FastAPI):
         await async_engine.dispose()
 
 
+# A documentação interativa (/api/docs) fica desligada por padrão: com a tela
+# de administração ela não é mais necessária e só expõe o mapa da API.
+# Para ligar: ENABLE_API_DOCS=on
+DOCS_ENABLED = os.getenv("ENABLE_API_DOCS", "off").strip().lower() in {"on", "true", "1"}
+
 app = FastAPI(
     lifespan=lifespan,
     title="API Jenpex",
-    docs_url="/api/docs",
+    docs_url="/api/docs" if DOCS_ENABLED else None,
     redoc_url=None,
-    openapi_url="/api/openapi.json",
+    openapi_url="/api/openapi.json" if DOCS_ENABLED else None,
+)
+
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
+    "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
 
 
@@ -71,6 +83,11 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if not request.url.path.startswith("/api/docs"):
+        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
     if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/docs"):
         response.headers.setdefault("Cache-Control", "no-store")
     return response
@@ -89,6 +106,7 @@ api_router.include_router(auth_router)
 api_router.include_router(me_router)
 api_router.include_router(game_master_router)
 api_router.include_router(display_router)
+api_router.include_router(staff_router)
 
 
 @api_router.get("/")

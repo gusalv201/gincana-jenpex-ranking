@@ -56,25 +56,27 @@ As tabelas são criadas automaticamente quando o app sobe pela primeira vez.
 | Recepção (cadastro de alunos) | `https://SUA-URL/#cadastro` | admin |
 | Chefes de mesa (celular/notebook) | `https://SUA-URL/#mesa` | usuário/senha do chefe |
 | Alunos (celular) | `https://SUA-URL/#notas` | código do aluno + PIN |
-| Administração (jogos e chefes) | `https://SUA-URL/api/docs` | admin (ver abaixo) |
+| Administração (jogos, chefes, recepção, alunos) | `https://SUA-URL/#admin` | admin |
+| Resultados detalhados por aluno | `https://SUA-URL/#resultados` | admin ou recepção |
 
 ## 4. Preparar o evento (admin)
 
-Ainda não existe uma tela de administração. Enquanto ela não é feita, use a documentação interativa:
+Abra `https://SUA-URL/#admin` e entre como admin:
 
-1. Abra `https://SUA-URL/api/docs`.
-2. `POST /api/auth/login` → *Try it out* → informe o usuário e a senha do admin → copie o `access_token` da resposta.
-3. Clique em **Authorize** (cadeado no topo da página), cole o token e confirme.
-4. Crie os jogos com `POST /api/admin/games`, por exemplo `{"name": "Robótica"}`.
-5. Crie os chefes de mesa com `POST /api/admin/masters`, por exemplo `{"username": "mesa_robotica", "password": "senha-que-voce-escolher"}`. A senha precisa ter pelo menos 8 caracteres.
-6. Vincule cada chefe ao seu jogo com `PUT /api/admin/games/{game_id}/master`, usando `{"master_id": ID_DO_CHEFE}`. A lista de IDs sai em `GET /api/admin/masters`.
+1. **🎮 Jogos:** crie cada jogo.
+2. **🧑‍⚖️ Chefes de mesa:** crie cada chefe (usuário e senha definidos por você) e, na aba Jogos, vincule-o ao jogo dele.
+3. **🧾 Equipe da recepção:** crie usuários para os alunos que vão cadastrar participantes. Eles conseguem cadastrar, corrigir nomes, gerar novo PIN e ver resultados, mas não excluem alunos nem mexem em jogos e chefes.
+4. **🎓 Alunos:** consulte e exclua alunos (a exclusão apaga também as notas).
+
+A documentação técnica da API (`/api/docs`) fica desligada por padrão. Para ligar temporariamente, crie a variável `ENABLE_API_DOCS=on` no Render.
 
 ## 5. Segurança aplicada
 
-- **Ninguém se cadastra sozinho:** somente o admin cadastra participantes. Chefes de mesa e jogos também são criados apenas pelo admin.
+- **Ninguém se cadastra sozinho:** somente o admin e a equipe da recepção cadastram participantes. Jogos, chefes de mesa e usuários da recepção são criados apenas pelo admin.
 - **Permissões por papel:** o chefe de mesa só lança notas no jogo dele, o aluno só vê as próprias notas e o telão é somente leitura.
 - **Senhas:** são armazenadas com hash Argon2, nunca em texto. A senha do admin vem de uma variável de ambiente, nunca do código.
-- **Tentativas de login:** após 8 erros para o mesmo usuário (ou 20 a partir do mesmo IP), o login fica bloqueado por 10 minutos.
+- **Tentativas de login:** após 8 erros para o mesmo usuário a partir do mesmo IP (ou 100 erros de um mesmo IP), aquele IP fica bloqueado por 10 minutos. Um atacante não consegue trancar a conta de um chefe de mesa que está em outra rede.
+- **Cabeçalhos de proteção do navegador:** CSP, HSTS e bloqueio de incorporação em outros sites.
 - **Conexões:** HTTPS automático no Render e TLS com verificação de certificado até o banco no Aiven.
 - **Tokens:** expiram em 8 horas e ficam só na memória da aba. Fechar ou recarregar a aba obriga a entrar de novo.
 

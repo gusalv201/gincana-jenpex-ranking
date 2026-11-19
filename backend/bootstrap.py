@@ -9,6 +9,7 @@
 import logging
 import os
 
+from sqlalchemy import text
 from sqlmodel import SQLModel, select
 
 import models  # noqa: F401  (registra as tabelas no metadata)
@@ -24,6 +25,40 @@ MIN_ADMIN_PASSWORD_LENGTH = 12
 async def create_tables() -> None:
     async with async_engine.begin() as connection:
         await connection.run_sync(SQLModel.metadata.create_all)
+
+
+# Regras de perfil atualizadas (inclui "reception"). Bancos criados antes
+# desta versão têm as regras antigas e precisam ser ajustados uma vez.
+_ROLE_CHECKS = {
+    "ck_user_role": "role IN ('participant', 'table_master', 'admin', 'reception')",
+    "ck_user_participant_code": (
+        "(role = 'participant' AND participant_code IS NOT NULL "
+        "AND length(participant_code) = 6) OR "
+        "(role IN ('table_master', 'admin', 'reception') AND participant_code IS NULL)"
+    ),
+}
+
+
+async def migrate_role_checks() -> None:
+    if async_engine.dialect.name != "mysql":
+        return
+    async with async_engine.begin() as connection:
+        result = await connection.execute(
+            text(
+                "SELECT CONSTRAINT_NAME, CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = DATABASE()"
+            )
+        )
+        existing = {name: clause for name, clause in result.all()}
+        for name, clause in _ROLE_CHECKS.items():
+            if name in existing and "reception" in existing[name]:
+                continue
+            if name in existing:
+                await connection.execute(text(f"ALTER TABLE `user` DROP CHECK `{name}`"))
+            await connection.execute(
+                text(f"ALTER TABLE `user` ADD CONSTRAINT `{name}` CHECK ({clause})")
+            )
+            logger.info("Regra %s atualizada para incluir o perfil da recepção.", name)
 
 
 async def ensure_admin() -> None:
@@ -73,4 +108,5 @@ async def ensure_admin() -> None:
 
 async def run_bootstrap() -> None:
     await create_tables()
+    await migrate_role_checks()
     await ensure_admin()

@@ -173,7 +173,7 @@
             <div class="row-info">
               <strong class="row-name">{{ item.nomeExibicao }}</strong>
               <span class="row-meta">
-                Código: <code>{{ item.participant_code || 'Sem código' }}</code>
+                <small>#{{ item.participant_code || 'sem código' }}</small>
                 <template v-if="item.identificador"> • {{ item.identificador }}</template>
               </span>
             </div>
@@ -368,9 +368,9 @@
               class="history-item"
             >
               <div class="history-left">
-                <strong class="history-student">{{ resolverNomePorCodigo(registro.participant_code) }}</strong>
+                <strong class="history-student">{{ registro.username || resolverNomePorCodigo(registro.participant_code) }}</strong>
                 <span class="history-meta">
-                  Código: <code>{{ registro.participant_code }}</code> • {{ formatarHorario(registro.created_at) }}
+                  <small>#{{ registro.participant_code }}</small> • {{ formatarHorario(registro.created_at) }}
                 </span>
               </div>
               <div class="history-right">
@@ -387,6 +387,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
+  getGameMasterParticipants,
   login,
   getMyProfile,
   getGameMasterGame,
@@ -432,6 +433,8 @@ const filtroStatus = ref('todos')
 const codigoManual = ref('')
 
 const alunoSelecionado = ref(null)
+// Lista oficial de alunos (nome + código) vinda do servidor
+const participantesServidor = ref([])
 const pontosInput = ref(50)
 const aguardandoConfirmacao = ref(false)
 const enviandoPontos = ref(false)
@@ -463,6 +466,8 @@ const mapaJaParticipou = computed(() => {
 function resolverNomePorCodigo(codigo) {
   if (!codigo) return 'Participante'
   const codeUpper = codigo.toUpperCase()
+  const doServidor = participantesServidor.value.find((p) => p.participant_code === codeUpper)
+  if (doServidor) return doServidor.username
   const conhecido = props.participantesConhecidos.find(
     (p) => (p.participant_code || '').toUpperCase() === codeUpper
   )
@@ -475,6 +480,19 @@ function resolverNomePorCodigo(codigo) {
 // Combina participantes conhecidos na sessão + códigos vindos do ranking e do histórico do jogo
 const listaCombinadaParticipantes = computed(() => {
   const porCodigo = new Map()
+
+  for (const p of participantesServidor.value) {
+    const code = (p.participant_code || '').toUpperCase()
+    if (!code) continue
+    const jaJogouPontos = mapaJaParticipou.value.get(code)
+    porCodigo.set(code, {
+      participant_code: code,
+      nomeExibicao: p.username,
+      identificador: null,
+      jaParticipou: jaJogouPontos !== undefined,
+      pontosObtidos: jaJogouPontos ?? null
+    })
+  }
 
   for (const p of props.participantesConhecidos) {
     const code = (p.participant_code || '').toUpperCase()
@@ -507,7 +525,7 @@ const listaCombinadaParticipantes = computed(() => {
     if (!code || porCodigo.has(code)) continue
     porCodigo.set(code, {
       participant_code: code,
-      nomeExibicao: `Participante #${code}`,
+      nomeExibicao: s.username || `Participante #${code}`,
       identificador: null,
       jaParticipou: true,
       pontosObtidos: s.points
@@ -604,10 +622,14 @@ async function sincronizarMesa(emitirRetry = false) {
     if (!usuarioLogado.value) {
       usuarioLogado.value = await getMyProfile()
     }
-    const [gameData, scoresData] = await Promise.all([
+    const [gameData, scoresData, alunosData] = await Promise.all([
       getGameMasterGame(),
-      getGameMasterScores()
+      getGameMasterScores(),
+      getGameMasterParticipants().catch(() => null)
     ])
+    if (Array.isArray(alunosData)) {
+      participantesServidor.value = alunosData
+    }
     jogoVinculado.value = gameData
     if (Array.isArray(scoresData)) {
       historicoJogo.value = scoresData
