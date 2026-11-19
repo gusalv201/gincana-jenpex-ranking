@@ -29,6 +29,9 @@
       <!-- Interface 4: Área do aluno (/#notas) -->
       <MinhasNotas v-else-if="currentView === 'notas'" />
 
+      <!-- Interface 5: Administração (/#admin) -->
+      <PainelAdmin v-else-if="currentView === 'admin'" />
+
       <!-- Interface 3: Ranking Geral Top 10 para TV (/#ranking) -->
       <TelaoRanking
         v-else
@@ -49,9 +52,10 @@ import CadastroParticipantes from './components/CadastroParticipantes.vue'
 import PainelChefeMesa from './components/PainelChefeMesa.vue'
 import TelaoRanking from './components/TelaoRanking.vue'
 import MinhasNotas from './components/MinhasNotas.vue'
+import PainelAdmin from './components/PainelAdmin.vue'
 import { getDisplayRanking } from './services/api.js'
 
-const ROTAS_VALIDAS = new Set(['cadastro', 'mesa', 'ranking', 'notas'])
+const ROTAS_VALIDAS = new Set(['cadastro', 'mesa', 'ranking', 'notas', 'admin'])
 
 function resolverRotaPorHash() {
   const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase()

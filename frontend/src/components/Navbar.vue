@@ -47,6 +47,13 @@
         >
           🎓 Minhas Notas (#notas)
         </a>
+        <a
+          href="#admin"
+          :class="['nav-btn', currentView === 'admin' ? 'active' : '']"
+          @click.prevent="$emit('change-view', 'admin')"
+        >
+          ⚙️ Admin (#admin)
+        </a>
       </nav>
 
       <!-- Indicador de Conexão com o Servidor Central na Rede Local -->

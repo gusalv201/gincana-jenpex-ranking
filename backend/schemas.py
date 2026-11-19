@@ -133,3 +133,12 @@ class RankingResponse(BaseModel):
 
 class DisplayRankingResponse(BaseModel):
     ranking: list[RankingEntry]
+
+
+class AdminParticipantListItem(BaseModel):
+    id: int
+    username: str
+    participant_code: str
+    is_active: bool
+    total_points: int = Field(ge=0)
+    games_played: int = Field(ge=0)

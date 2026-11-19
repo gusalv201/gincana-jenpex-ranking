@@ -62,6 +62,8 @@ function formatErrorMessage(status, detail) {
       'Master not found': 'Chefe de mesa não encontrado no servidor (HTTP 404).',
       'Master is already assigned to another game': 'Este chefe de mesa já está vinculado a outro jogo (HTTP 409).',
       'A game with scores cannot be reassigned': 'Um jogo que já possui pontuações não pode ter o chefe de mesa alterado (HTTP 409).',
+      'Cannot assign a master to an inactive game': 'Não é possível vincular um chefe a um jogo inativo.',
+      'User is not a table master': 'O usuário escolhido não é um chefe de mesa.',
       'Score not found': 'Registro de pontuação não encontrado (HTTP 404).',
       'Participant role required': 'Acesso restrito a participantes (HTTP 403).',
       'Table master role required': 'Autenticação de chefe de mesa necessária para esta operação.',
@@ -390,3 +392,20 @@ export function getAdminRanking(options = {}) {
   return apiRequest('/admin/ranking', options)
 }
 
+
+/**
+ * Lista os alunos cadastrados com total de pontos (`GET /admin/participants` - admin).
+ */
+export function listAdminParticipants(options = {}) {
+  return apiRequest('/admin/participants', options)
+}
+
+/**
+ * Exclui um aluno e todas as suas pontuações (`DELETE /admin/participants/{id}` - admin).
+ */
+export function deleteAdminParticipant(participantId, options = {}) {
+  return apiRequest(`/admin/participants/${participantId}`, {
+    ...options,
+    method: 'DELETE',
+  })
+}
