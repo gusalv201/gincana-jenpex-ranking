@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import delete, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -11,6 +12,7 @@ from schemas import (
     AdminMasterCreate,
     AdminMasterListItem,
     AdminMasterSummary,
+    AdminParticipantListItem,
     MasterAssignment,
     RankingResponse,
     ScoreCorrection,
@@ -245,3 +247,50 @@ async def read_general_ranking(
     session: SessionDep,
 ) -> RankingResponse:
     return await get_general_ranking(session)
+
+
+@router.get("/participants", response_model=list[AdminParticipantListItem])
+async def list_participants(session: SessionDep) -> list[AdminParticipantListItem]:
+    result = await session.exec(
+        select(
+            User.id,
+            User.username,
+            User.participant_code,
+            User.is_active,
+            func.coalesce(func.sum(Score.points), 0),
+            func.count(Score.id),
+        )
+        .outerjoin(Score, Score.participant_id == User.id)
+        .where(User.role == "participant")
+        .group_by(User.id, User.username, User.participant_code, User.is_active)
+        .order_by(User.username.asc())
+    )
+    return [
+        AdminParticipantListItem(
+            id=participant_id,
+            username=username,
+            participant_code=participant_code,
+            is_active=is_active,
+            total_points=int(total),
+            games_played=int(games),
+        )
+        for participant_id, username, participant_code, is_active, total, games in result.all()
+    ]
+
+
+@router.delete(
+    "/participants/{participant_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_participant(participant_id: int, session: SessionDep) -> Response:
+    """Exclui o aluno e todas as pontuações dele (não pode ser desfeito)."""
+    participant = await session.get(User, participant_id)
+    if participant is None or participant.role != "participant":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Participant not found",
+        )
+    await session.exec(delete(Score).where(Score.participant_id == participant_id))
+    await session.delete(participant)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
