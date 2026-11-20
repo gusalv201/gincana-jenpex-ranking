@@ -476,3 +476,8 @@ export function createAdminStaff({ username, password }, options = {}) {
 export function deleteAdminStaff(staffId, options = {}) {
   return apiRequest(`/admin/staff/${staffId}`, { ...options, method: 'DELETE' })
 }
+
+/** Exporta os dados do evento para relatório (`GET /admin/export` - admin). */
+export function exportAdminData(options = {}) {
+  return apiRequest('/admin/export', { timeoutMs: 30000, ...options })
+}

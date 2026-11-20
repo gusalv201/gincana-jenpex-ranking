@@ -29,6 +29,7 @@
         </div>
         <div class="acoes-topo">
           <button class="btn-secondary" :disabled="carregando" @click="carregarTudo">🔄 Atualizar</button>
+          <button class="btn-secondary" :disabled="carregando" @click="exportarDados">⬇️ Exportar dados</button>
           <button class="btn-secondary" @click="sair">Sair</button>
         </div>
       </header>
@@ -149,7 +150,7 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   login, getMyProfile, clearAuthToken, retomarSessao,
-  listAdminStaff, createAdminStaff, deleteAdminStaff,
+  listAdminStaff, createAdminStaff, deleteAdminStaff, exportAdminData,
   listAdminGames, createAdminGame, listAdminMasters, createAdminMaster, assignMasterToGame,
   listAdminParticipants, deleteAdminParticipant,
 } from '../services/api.js'
@@ -226,6 +227,30 @@ async function entrar() {
     await carregarTudo()
   } catch (e) {
     erroLogin.value = e.message || 'Falha na autenticação.'
+  } finally {
+    carregando.value = false
+  }
+}
+
+async function exportarDados() {
+  carregando.value = true
+  try {
+    const dados = await exportAdminData()
+    const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const agora = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    const nome = `jenpex-dados-${agora.getFullYear()}${pad(agora.getMonth() + 1)}${pad(agora.getDate())}-${pad(agora.getHours())}${pad(agora.getMinutes())}.json`
+    const link = document.createElement('a')
+    link.href = url
+    link.download = nome
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    avisar(`Arquivo ${nome} baixado (${dados.participants.length} alunos, ${dados.scores.length} notas).`)
+  } catch (e) {
+    tratarErro(e)
   } finally {
     carregando.value = false
   }

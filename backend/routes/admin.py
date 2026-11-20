@@ -314,3 +314,60 @@ async def delete_staff(staff_id: int, session: SessionDep) -> Response:
     await session.delete(user)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Exportação para relatório (sem senhas nem hashes)
+# ---------------------------------------------------------------------------
+@router.get("/export")
+async def export_event_data(session: SessionDep) -> dict:
+    from datetime import datetime, timezone
+
+    games = (await session.exec(select(Game).order_by(Game.id))).all()
+    users = (await session.exec(select(User).order_by(User.id))).all()
+    scores = (await session.exec(select(Score).order_by(Score.created_at))).all()
+    names = {user.id: user.username for user in users}
+
+    def iso(value):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "games": [
+            {
+                "id": game.id,
+                "name": game.name,
+                "is_active": game.is_active,
+                "master": names.get(game.master_id),
+            }
+            for game in games
+        ],
+        "participants": [
+            {
+                "id": user.id,
+                "username": user.username,
+                "participant_code": user.participant_code,
+                "is_active": user.is_active,
+            }
+            for user in users
+            if user.role == "participant"
+        ],
+        "staff": {
+            "table_masters": sum(1 for user in users if user.role == "table_master"),
+            "reception": sum(1 for user in users if user.role == "reception"),
+        },
+        "scores": [
+            {
+                "id": score.id,
+                "participant_id": score.participant_id,
+                "game_id": score.game_id,
+                "points": score.points,
+                "created_at": iso(score.created_at),
+            }
+            for score in scores
+        ],
+    }
